@@ -1,0 +1,4 @@
+ephem>=4.1
+numpy>=1.24
+scikit-image>=0.21
+global-land-mask>=1.0
