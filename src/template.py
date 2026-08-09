@@ -39,10 +39,10 @@ main{flex:1;min-height:0;position:relative}
 .pane{position:absolute;inset:0;display:none;flex-direction:column;min-height:0}
 .pane.on{display:flex}
 /* canon */
+.canonCol{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 #wrap{flex:1;position:relative;min-width:0;min-height:110px}
-canvas#cv{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none}
-.readout{position:absolute;left:10px;bottom:10px;right:10px;border:1px solid var(--rule);
- background:rgba(7,10,16,.93);backdrop-filter:blur(6px);padding:7px 11px;pointer-events:none;
+canvas#cv{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+.readout{flex:none;border-top:1px solid var(--rule);background:var(--ink2);padding:7px 12px;
  display:flex;gap:3px 18px;align-items:baseline;flex-wrap:wrap;font-size:11px;min-height:32px}
 .lbl{color:var(--dim);font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-right:5px}
 .date{font-family:"Newsreader",serif;font-style:italic;color:var(--corona)}
@@ -53,6 +53,13 @@ em{font-style:normal;color:var(--corona)}
 #detail.open{height:min(58%,410px)}
 #detail .inner{overflow-y:auto;flex:1;min-height:0}
 #map{display:block;background:#04070c;border-bottom:1px solid var(--rule);margin:0 auto;max-width:100%}
+/* desktop: canon left, selected eclipse right; full width when nothing is selected */
+@media (min-width:900px){
+  #paneCanon{flex-direction:row}
+  #detail{height:auto!important;width:0;border-top:0;border-left:1px solid var(--rule);
+   transition:width .26s cubic-bezier(.4,0,.2,1)}
+  #detail.open{width:min(46%,560px)}
+}
 /* machine */
 #mScroll{flex:1;overflow-y:auto;min-height:0}
 #dialBox{position:relative;width:100%;aspect-ratio:1/1;max-height:56vh}
@@ -102,7 +109,10 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 </div>
 <main>
   <section class="pane on" id="paneCanon">
-    <div id="wrap"><canvas id="cv"></canvas><div class="readout" id="ro"></div></div>
+    <div class="canonCol">
+      <div id="wrap"><canvas id="cv"></canvas></div>
+      <div class="readout" id="ro"></div>
+    </div>
     <div id="detail"><div class="inner">
       <canvas id="map"></canvas>
       <div class="blk"><div class="grid2" id="pStats"></div></div>
@@ -210,10 +220,12 @@ function resize(){const dp=Math.min(devicePixelRatio||1,2),r=cv.getBoundingClien
   W=r.width;H=r.height;cv.width=Math.round(W*dp);cv.height=Math.round(H*dp);
   ctx.setTransform(dp,0,0,dp,0,0);draw();setReadout();}
 new ResizeObserver(resize).observe(document.getElementById("wrap"));
-const YSTEP=[2000,1000,500,200,100,50,25,10,5,2,1];
+const YSTEP=[2000,1000,500,200,100,50,20,10,5,2,1];
 const yrLab=g=>{const y=Math.round(g);return y<=0?(1-y)+" BCE":String(y);};
 function ticks(){const span=view.x1-view.x0,px=W-PAD.l-PAD.r;
-  if(span>=3){let maj=YSTEP.find(s=>px/(span/s)>62)||1;
+  /* YSTEP descends, so every coarse step clears the spacing test; take the
+     finest one that still does, otherwise labels land 2000 years apart. */
+  if(span>=3){let maj=YSTEP.filter(s=>px/(span/s)>58).pop()||YSTEP[0];
     let mi=YSTEP[Math.min(YSTEP.indexOf(maj)+1,YSTEP.length-1)];
     if(px/(span/mi)<9)mi=maj;const M=[],m=[];
     for(let g=Math.ceil(view.x0/mi)*mi;g<=view.x1;g+=mi)(Math.abs(g%maj)<1e-9?M:m).push(g);
@@ -326,7 +338,7 @@ function setReadout(){
     for(let i=lo_(c-9.02);i<lo_(c+9.02);i++)a.add(E[i].S);
     ro.innerHTML='<span><span class="lbl">In view</span><em>'+(lo_(view.x1)-lo_(view.x0)).toLocaleString()+
       '</em></span><span><span class="lbl">Saros running</span><em>'+a.size+
-      '</em></span><span class="hint">'+(szDur?'dot size = central duration':'drag to pan &middot; pinch to zoom &middot; tap a point')+'</span>';return;}
+      '</em></span><span class="hint">'+(szDur?'dot size = central duration':'drag to pan &middot; scroll to zoom &middot; tap a point &middot; dbl-click resets')+'</span>';return;}
   ro.innerHTML='<span class="date" style="font-size:15px">'+dstr(e)+'</span>'+
     '<span><span class="lbl">Type</span><em style="color:'+COL[e.t]+'">'+TYPES[e.t]+'</em></span>'+
     '<span><span class="lbl">Saros</span><em>'+e.S+'</em></span>'+
@@ -374,6 +386,9 @@ function drawMap(e){
     mc.fillText(e.t===3?"no central path \u2014 the axis misses Earth":"path not computed before 1000 CE",w/2,h/2);}
   mc.strokeStyle="#1e2836";mc.strokeRect(.5,.5,w-1,h-1);
 }
+/* the panel animates open, so its final size is only known once it settles */
+detail.addEventListener("transitionend",ev=>{
+  if(ev.propertyName==="width"||ev.propertyName==="height")drawMap(sel);});
 /* ---------- machine ---------- */
 const dial=document.getElementById("dial"),dx=dial.getContext("2d");
 const geom=document.getElementById("geom"),gx=geom.getContext("2d");
@@ -543,6 +558,14 @@ function pick(px,py){let b=null,bd=17*17;
     const dx2=sx(e.y)-px;if(dx2<-17||dx2>17)continue;
     const dy2=sy(yv(e))-py;if(dy2<-17||dy2>17)continue;
     const d=dx2*dx2+dy2*dy2;if(d<bd){bd=d;b=e;}}return b;}
+const BOUNDS=(function(){let sl=1e9,sh=-1e9,il=1e9,ih=-1e9;
+  for(const e of E){if(e.S<sl)sl=e.S;if(e.S>sh)sh=e.S;if(e.I<il)il=e.I;if(e.I>ih)ih=e.I;}
+  return{saros:[sl,sh],inex:[il,ih],gamma:[-1.7,1.7]};})();
+function clampY(){const b=BOUNDS[mode],pad=(b[1]-b[0])*.06+1,L=b[0]-pad,U=b[1]+pad;
+  const s=view.y1-view.y0;
+  if(s>=U-L){view.y0=L;view.y1=U;return;}
+  if(view.y0<L){view.y0=L;view.y1=L+s;}
+  if(view.y1>U){view.y1=U;view.y0=U-s;}}
 function clampView(){let s=Math.min(Math.max(view.x1-view.x0,.6),5050);
   const c=(view.x0+view.x1)/2;view.x0=c-s/2;view.x1=c+s/2;
   if(view.x0<-2005){view.x0=-2005;view.x1=-2005+s;}
@@ -553,11 +576,11 @@ function zoomAt(px,f){const a=ix(px);
   clampView();draw();setReadout();}
 cv.addEventListener("wheel",ev=>{ev.preventDefault();
   if(ev.shiftKey){const c=(view.y0+view.y1)/2,s=(view.y1-view.y0)*(ev.deltaY>0?1.12:.89);
-    view.y0=c-s/2;view.y1=c+s/2;draw();}else zoomAt(ev.offsetX,ev.deltaY>0?1.14:.877);},{passive:false});
+    view.y0=c-s/2;view.y1=c+s/2;clampY();draw();}else zoomAt(ev.offsetX,ev.deltaY>0?1.14:.877);},{passive:false});
 let drag=null,pts=new Map(),pinch=null,moved=false;
 cv.addEventListener("pointerdown",ev=>{pts.set(ev.pointerId,ev);
-  if(pts.size===1){cv.setPointerCapture(ev.pointerId);moved=false;
-    drag={x:ev.offsetX,y:ev.offsetY,vx0:view.x0,vx1:view.x1,vy0:view.y0,vy1:view.y1};}else drag=null;});
+  if(pts.size===1){cv.setPointerCapture(ev.pointerId);moved=false;cv.style.cursor="grabbing";
+    drag={x:ev.offsetX,y:ev.offsetY,vx0:view.x0,vx1:view.x1,vy0:view.y0,vy1:view.y1,lock:null};}else drag=null;});
 cv.addEventListener("pointermove",ev=>{
   if(pts.has(ev.pointerId))pts.set(ev.pointerId,ev);
   if(pts.size===2){const[a,b]=[...pts.values()];
@@ -565,19 +588,27 @@ cv.addEventListener("pointermove",ev=>{
     if(pinch&&dd>0)zoomAt(m,pinch/dd);pinch=dd;moved=true;return;}
   if(drag){const dx0=ev.offsetX-drag.x,dy0=ev.offsetY-drag.y;
     if(Math.abs(dx0)+Math.abs(dy0)>4)moved=true;
-    view.x0=drag.vx0-dx0/(W-PAD.l-PAD.r)*(drag.vx1-drag.vx0);
-    view.x1=drag.vx1-dx0/(W-PAD.l-PAD.r)*(drag.vx1-drag.vx0);
-    view.y0=drag.vy0+dy0/(H-PAD.t-PAD.b)*(drag.vy1-drag.vy0);
-    view.y1=drag.vy1+dy0/(H-PAD.t-PAD.b)*(drag.vy1-drag.vy0);
-    clampView();draw();setReadout();return;}
+    /* soft axis lock: a mostly-sideways drag stops nudging the vertical axis */
+    if(!drag.lock&&Math.abs(dx0)+Math.abs(dy0)>7)
+      drag.lock=Math.abs(dx0)>2.2*Math.abs(dy0)?"x":Math.abs(dy0)>2.2*Math.abs(dx0)?"y":"xy";
+    const lk=drag.lock||"xy";
+    if(lk==="y"){view.x0=drag.vx0;view.x1=drag.vx1;}
+    else{view.x0=drag.vx0-dx0/(W-PAD.l-PAD.r)*(drag.vx1-drag.vx0);
+      view.x1=drag.vx1-dx0/(W-PAD.l-PAD.r)*(drag.vx1-drag.vx0);}
+    if(lk==="x"){view.y0=drag.vy0;view.y1=drag.vy1;}
+    else{view.y0=drag.vy0+dy0/(H-PAD.t-PAD.b)*(drag.vy1-drag.vy0);
+      view.y1=drag.vy1+dy0/(H-PAD.t-PAD.b)*(drag.vy1-drag.vy0);}
+    clampView();clampY();draw();setReadout();return;}
   const h=pick(ev.offsetX,ev.offsetY);
-  if(h!==hover){hover=h;cv.style.cursor=h?"pointer":"crosshair";draw();setReadout();}});
+  if(h!==hover){hover=h;cv.style.cursor=h?"pointer":"grab";draw();setReadout();}});
 ["pointerup","pointercancel"].forEach(t=>cv.addEventListener(t,ev=>{
   if(t==="pointerup"&&!moved&&pts.size===1){const h=pick(ev.offsetX,ev.offsetY);
     if(h){stop();select(h);}else if(sel){detail.classList.remove("open");
       setTimeout(()=>drawMap(sel),300);}}
-  pts.delete(ev.pointerId);if(pts.size<2)pinch=null;if(pts.size===0)drag=null;}));
-cv.addEventListener("pointerleave",()=>{drag=null;pts.clear();pinch=null;
+  pts.delete(ev.pointerId);if(pts.size<2)pinch=null;
+  if(pts.size===0){drag=null;cv.style.cursor="grab";}}));
+/* only drop hover here: killing the drag would break panning past the canvas edge */
+cv.addEventListener("pointerleave",()=>{if(pts.size===0){drag=null;pinch=null;}
   if(hover){hover=null;draw();setReadout();}});
 cv.addEventListener("dblclick",()=>{view.x0=nowY-30;view.x1=nowY+30;fitY();draw();setReadout();});
 addEventListener("keydown",e=>{
