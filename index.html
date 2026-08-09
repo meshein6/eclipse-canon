@@ -797,10 +797,13 @@ function drawDial(){
     dx.beginPath();dx.arc(p.x,p.y,e.t===3?2:3.1,0,6.2832);dx.fill();}
   dx.globalAlpha=1;
   if(sel){const p=spiral(sel.cell+.5,cx,cy,R);
-    dx.strokeStyle="#b58b4c";dx.lineWidth=1.5;dx.beginPath();dx.moveTo(cx,cy);dx.lineTo(p.x,p.y);dx.stroke();
-    dx.fillStyle="#b58b4c";dx.beginPath();dx.arc(p.x,p.y,4.6,0,6.2832);dx.fill();
+    /* pointer takes the eclipse's own colour; partial's slate is lifted so it
+       stays visible against the dial */
+    const pc=sel.t===3?"#7d8ea6":COL[sel.t];
+    dx.strokeStyle=pc;dx.lineWidth=1.5;dx.beginPath();dx.moveTo(cx,cy);dx.lineTo(p.x,p.y);dx.stroke();
+    dx.fillStyle=pc;dx.beginPath();dx.arc(p.x,p.y,4.6,0,6.2832);dx.fill();
     dx.strokeStyle="rgba(7,10,16,.85)";dx.lineWidth=1.2;dx.stroke();
-    dx.fillStyle="#b58b4c";dx.font='500 10px "IBM Plex Mono",monospace';dx.textAlign="center";
+    dx.fillStyle=pc;dx.font='500 10px "IBM Plex Mono",monospace';dx.textAlign="center";
     dx.textBaseline="middle";
     dx.fillText("CELL "+sel.cell,cx,cy-11);
     dx.fillStyle="#5d6b80";dx.font='9px "IBM Plex Mono",monospace';
