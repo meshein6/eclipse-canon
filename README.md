@@ -31,7 +31,10 @@ zoomable to about 30×. It shows the central path, the northern and southern lim
 umbral path as dotted lines, the umbra itself at whatever moment the time slider is set
 to, the day/night terminator with a twilight gradient, and the sub-solar point. Run the
 slider (or hit play) and the shadow crosses while the terminator and the sun-overhead
-point move with it. **Expand** gives it the whole pane. City pins fade in as you zoom,
+point move with it. Play runs the whole crossing in about 30 seconds, roughly 390×
+real time, and the length of the central phase under the umbra is shown live — it
+climbs from zero at the sunrise limit to the maximum at greatest eclipse and back to
+zero at sunset. **Expand** gives it the whole pane. City pins fade in as you zoom,
 in three tiers. The flat equirectangular map is still there under **Flat**, and that one
 ghosts the two previous returns of the same series behind the current track to show the
 ~115° westward march.
@@ -54,7 +57,8 @@ and watch gamma march across the globe while the dial pointer never moves.
 | Ground track | Sun→Moon axis intersected with the WGS-84 ellipsoid, via pyephem apparent positions and apparent sidereal time |
 | TD → UT | Espenak–Meeus ΔT polynomials |
 | Path width | Umbral cone radius at the surface / cosine of local incidence |
-| Central duration | Cone diameter / shadow ground speed at greatest eclipse |
+| Central duration | Cone diameter / shadow ground speed, at each of the 13 sampled points |
+| Day/night on the globe | Sun elevation per pixel from a low-precision solar position and GMST |
 | Coastlines | Marching squares on a 30-arcsecond land raster, Douglas–Peucker simplified to 3,310 points |
 
 The saros and inex numbers satisfy `k = 223·I + 358·S + 44`, so once one is fixed the

@@ -204,15 +204,18 @@ def build(jde_td, year, npts=15):
         if hits(m): a = m
         else: b = m
     end = a
-    pts, wpts = [], []
+    pts, wpts, dpts = [], [], []
     for i in range(npts):
         j = start + (end-start)*i/(npts-1)
         p = axis_hit(j)
         pts.append(p if p else pts[-1])
-        # width at this point, so the viewer can draw the path edges rather
-        # than assume the greatest-eclipse width holds all the way across
+        # width and central duration at this point, so the viewer can draw the
+        # path edges and run a live clock rather than assume the greatest-eclipse
+        # figures hold all the way across
         g = geometry(j)
         wpts.append(g[0] if g else (wpts[-1] if wpts else 0.0))
+        spj = ground_speed(j)
+        dpts.append(g[2]/spj if (g and spj and spj > 0) else 0.0)
     # greatest eclipse: sample for max cone-axis proximity to geocentre (use widest ground track)
     best, bjd = None, None
     for i in range(41):
@@ -225,7 +228,7 @@ def build(jde_td, year, npts=15):
     g = geometry(gj)
     sp = ground_speed(gj)
     dur = (g[2]/sp) if (g and sp and sp > 0) else None
-    return dict(pts=pts, wpts=wpts, start=start, end=end, gj=gj,
+    return dict(pts=pts, wpts=wpts, dpts=dpts, start=start, end=end, gj=gj,
                 width=(g[0] if g else None), dur=dur)
 
 

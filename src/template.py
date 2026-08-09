@@ -65,6 +65,7 @@ em{font-style:normal;color:var(--corona)}
 .tRow input[type=range]{flex:1;min-width:0;accent-color:var(--ring);height:16px}
 #tLab{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--corona);
  white-space:nowrap;min-width:74px;text-align:right}
+#tDur{font-size:10px;color:var(--ring);white-space:nowrap;min-width:96px;text-align:right}
 /* desktop: canon left, selected eclipse right; full width when nothing is selected */
 @media (min-width:900px){
   #paneCanon{flex-direction:row}
@@ -149,7 +150,7 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <div class="tRow" id="tRow">
         <button class="b" id="tPlay" aria-label="Animate the crossing">&#9654;</button>
         <input type="range" id="tSlide" min="0" max="1000" value="500" aria-label="Time through the eclipse">
-        <span id="tLab">--:-- UT</span>
+        <span id="tLab">--:-- UT</span><span id="tDur"></span>
       </div>
       <canvas id="map"></canvas>
       <div class="blk"><div class="grid2" id="pStats"></div></div>
@@ -227,10 +228,11 @@ for(let i=0,n=0;i<META.length;i+=15,n++){
 const MAXDUR=Math.max(...E.map(e=>e.dur));
 for(const e of E)e.cell=((e.k%223)+223)%223;
 for(let i=0;i<PIDX.length;i+=4){
-  const at=g4(PIDX,i),b=PDAT.substr(i/4*112,112),pts=[],ws=[];
+  const at=g4(PIDX,i),b=PDAT.substr(i/4*138,138),pts=[],ws=[],ds=[];
   for(let q=0;q<78;q+=6)pts.push([gL3(b,q,-180,180),gL3(b,q+3,-90,90)]);
   for(let q=86;q<112;q+=2)ws.push(g2(b,q));
-  E[at].p={pts:pts,ut:g2(b,78),w:g2(b,80),dur:g2(b,82),span:g2(b,84),ws:ws};
+  for(let q=112;q<138;q+=2)ds.push(g2(b,q));
+  E[at].p={pts:pts,ut:g2(b,78),w:g2(b,80),dur:g2(b,82),span:g2(b,84),ws:ws,ds:ds};
 }
 const BY={saros:new Map(),inex:new Map()};
 for(const e of E){for(const[k,v]of[["saros",e.S],["inex",e.I]]){
@@ -499,6 +501,9 @@ function trackAt(p,f){prep(p);const x=fIdx(p,f);
 function widthAt(p,f){if(!p.ws)return p.w;
   const v=spl(p.ws,fIdx(p,f));
   return Math.max(1,Math.min(v,Math.max(600,p.w*6)));}
+/* central-phase length where the umbra is standing right now */
+function durAt(p,f){if(!p.ds)return p.dur;
+  return Math.max(0,Math.min(spl(p.ds,fIdx(p,f)),p.dur*3));}
 const smooth=(p,n)=>{const o=[];for(let i=0;i<=n;i++)o.push(trackAt(p,i/n));return o;};
 /* great-circle bearing and offset, for the path edges */
 function bearing(a,b){const la1=a[1]*RAD,la2=b[1]*RAD,dl=(b[0]-a[0])*RAD;
@@ -585,7 +590,11 @@ function drawGlobe(){
       gb.fillStyle="rgba(7,10,16,.85)";gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.fill();
       gb.strokeStyle=COL[e.t];gb.lineWidth=1.6;gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.stroke();
       gb.strokeStyle=COL[e.t];gb.globalAlpha=.5;gb.lineWidth=1;
-      gb.beginPath();gb.arc(us.x,us.y,rr+6,0,6.2832);gb.stroke();gb.globalAlpha=1;}
+      gb.beginPath();gb.arc(us.x,us.y,rr+6,0,6.2832);gb.stroke();gb.globalAlpha=1;
+      const dd=Math.round(durAt(e.p,tFrac));
+      if(dd>0){gb.fillStyle=COL[e.t];gb.font='500 10px "IBM Plex Mono",monospace';
+        gb.textAlign="left";gb.textBaseline="middle";
+        gb.fillText(fd(dd),us.x+rr+9,us.y);}}
   }
   gb.restore();
   gb.strokeStyle="#2b3d52";gb.lineWidth=1;gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.stroke();
@@ -596,15 +605,25 @@ function drawGlobe(){
   if(e&&!e.p){gb.textAlign="center";gb.fillStyle="#5d6b80";
     gb.fillText(e.t===3?"partial — the axis misses Earth":"track not computed before 1000 CE",w/2,h-16);}
 }
+const TPLAY=30000;   /* one crossing takes half a minute, whatever its length */
 function setTLab(){const e=sel;
-  tLab.textContent=e&&e.p?utf(Math.round(tMin(e))):"--:-- UT";}
-function stopT(){if(tTimer){clearInterval(tTimer);tTimer=null;tPlay.classList.remove("on");
-  tPlay.innerHTML="&#9654;";}}
+  if(!e||!e.p){tLab.textContent="--:-- UT";tDur.textContent="";return;}
+  tLab.textContent=utf(Math.round(tMin(e)));
+  const d=Math.round(durAt(e.p,tFrac));
+  tDur.textContent=d>0?fd(d)+" "+(e.t===1?"annular":"total")
+    +(tTimer?"  ×"+Math.round(e.p.span*60/(TPLAY/1000)):""):"—";}
+function stopT(){if(tTimer){cancelAnimationFrame(tTimer);tTimer=null;
+  tPlay.classList.remove("on");tPlay.innerHTML="&#9654;";setTLab();}}
 tPlay.onclick=()=>{if(tTimer){stopT();return;}
   if(!sel||!sel.p)return;
   tPlay.classList.add("on");tPlay.innerHTML="&#9646;&#9646;";
-  tTimer=setInterval(()=>{tFrac+=.02;if(tFrac>1)tFrac=0;
-    tSlide.value=Math.round(tFrac*1000);setTLab();drawGlobe();},70);};
+  let t0=performance.now()-tFrac*TPLAY;
+  const tick=now=>{if(!tTimer)return;
+    let f=(now-t0)/TPLAY;
+    if(f>=1){f=0;t0=now;}
+    tFrac=f;tSlide.value=Math.round(f*1000);setTLab();drawGlobe();
+    tTimer=requestAnimationFrame(tick);};
+  tTimer=requestAnimationFrame(tick);};
 tSlide.oninput=()=>{stopT();tFrac=+tSlide.value/1000;setTLab();drawGlobe();};
 function setDetView(v){detView=v;
   vGlobe.setAttribute("aria-pressed",String(v==="globe"));
@@ -782,7 +801,7 @@ function deselect(){stop();stopT();sel=null;hover=null;
   detail.classList.remove("open");detail.classList.remove("expanded");
   expand.setAttribute("aria-pressed","false");expand.classList.remove("on");expand.textContent="Expand";
   stepInfo.innerHTML='<span class="d">Select an eclipse</span><span class="hint">tap a point on the canon</span>';
-  tSlide.disabled=true;tPlay.disabled=true;tLab.textContent="--:-- UT";
+  tSlide.disabled=true;tPlay.disabled=true;tLab.textContent="--:-- UT";tDur.textContent="";
   syncNav();refresh();}
 function syncNav(){
   if(sel){const{arr,i}=pickIn(sel);prev.disabled=i<=0;next.disabled=i>=arr.length-1;}

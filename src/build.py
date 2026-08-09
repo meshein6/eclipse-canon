@@ -60,6 +60,7 @@ def main():
             t = ephem.Date(p['gj'] - 2415020.0).tuple()
             r['pts'] = p['pts']
             r['wp'] = [int(round(min(w, 4095))) for w in p['wpts']]
+            r['dp'] = [int(round(min(d, 4095))) for d in p['dpts']]
             r['w'] = int(round(p['width']))
             r['dur'] = int(round(p['dur']))
             r['ut'] = int(round(t[3] * 60 + t[4] + t[5] / 60)) % 1440

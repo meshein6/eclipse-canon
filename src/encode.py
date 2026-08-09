@@ -43,8 +43,9 @@ def pack_meta(rows, durs):
 
 
 def pack_paths(rows):
-    """Index of eclipses with a track, then 112 chars per record: 13 lon/lat pairs
-    at 3 chars each, UT, width, duration, crossing span, 13 per-point widths."""
+    """Index of eclipses with a track, then 138 chars per record: 13 lon/lat pairs
+    at 3 chars each, UT, width, duration, crossing span, then 13 per-point widths
+    and 13 per-point central durations."""
     idx, dat = [], []
     for i, r in enumerate(rows):
         if 'pts' not in r:
@@ -53,7 +54,8 @@ def pack_paths(rows):
         dat.append("".join(eL3(p[0], -180, 180) + eL3(p[1], -90, 90) for p in r['pts'])
                    + e2(r['ut']) + e2(min(r['w'], 4095)) + e2(min(r['dur'], 4095))
                    + e2(min(r['span'], 4095))
-                   + "".join(e2(w) for w in r['wp']))
+                   + "".join(e2(w) for w in r['wp'])
+                   + "".join(e2(d) for d in r['dp']))
     return "".join(idx), "".join(dat)
 
 
