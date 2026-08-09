@@ -7,7 +7,7 @@ Everything is computed from first principles. No eclipse catalogue is downloaded
 scraped; the only inputs are lunar/solar theory and a land raster. The whole thing
 builds into a single self-contained HTML file with no runtime dependencies.
 
-**[Live demo](https://USERNAME.github.io/REPO/)** ← update after enabling Pages
+**[Live demo](https://meshein6.github.io/eclipse-canon/)**
 
 ## What's in it
 
@@ -128,5 +128,4 @@ from [global-land-mask](https://pypi.org/project/global-land-mask/).
 
 ## Licence
 
-Not yet chosen — add one before sharing widely. MIT is the usual choice for something
-like this.
+MIT — see [LICENSE](LICENSE).
