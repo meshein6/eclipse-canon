@@ -103,6 +103,19 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 #stepInfo .d{font-family:"Newsreader",serif;font-style:italic;font-size:14px;color:var(--corona);display:block}
 @media (max-width:520px){h1{font-size:16px}header{padding:9px 11px 6px}.bar{padding:6px 11px;gap:6px}
  .seg button{padding:6px 8px}.foot{padding:6px 9px;gap:6px}button.b{padding:6px 8px;font-size:10px}}
+/* The ribbon's four full labels need about 800px on their own, so anything short
+   of a wide desktop gets the short ones. Below 760 the date also moves to its own
+   line rather than being crushed into a column between the buttons. */
+.lbS{display:none}
+@media (max-width:1024px){.lb{display:none}.lbS{display:inline}}
+@media (max-width:760px){
+  .foot{flex-wrap:wrap;justify-content:center;gap:5px}
+  #stepInfo{flex:0 0 100%;order:-1;margin-bottom:2px}
+  #gHint{display:none}
+  .dtools{gap:5px}
+  .tRow{gap:6px;padding:6px 8px}
+  #tLab{min-width:64px}#tDur{min-width:auto}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -207,13 +220,13 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
   </section>
 </main>
 <div class="foot">
-  <button class="b" id="prevT" aria-label="Previous eclipse chronologically">&#9664;<span class="lb">Prev chronological</span></button>
-  <button class="b" id="prev" aria-label="Previous in this saros series">&#9664;<span class="lb">Prev in saros</span></button>
+  <button class="b" id="prevT" aria-label="Previous eclipse chronologically">&#9664;<span class="lb">Prev chronological</span><span class="lbS">chrono</span></button>
+  <button class="b" id="prev" aria-label="Previous in this saros series">&#9664;<span class="lb">Prev in saros</span><span class="lbS">saros</span></button>
   <div id="stepInfo"><span class="d">Select an eclipse</span><span class="hint" id="stepSub">tap a point on the canon</span></div>
   <button class="b" id="play" aria-label="Play through this saros series">&#9654;&#9654;</button>
   <button class="b" id="clr" aria-label="Clear selection">Clear</button>
-  <button class="b" id="next" aria-label="Next in this saros series"><span class="lb">Next in saros</span>&#9654;</button>
-  <button class="b" id="nextT" aria-label="Next eclipse chronologically"><span class="lb">Next chronological</span>&#9654;</button>
+  <button class="b" id="next" aria-label="Next in this saros series"><span class="lb">Next in saros</span><span class="lbS">saros</span>&#9654;</button>
+  <button class="b" id="nextT" aria-label="Next eclipse chronologically"><span class="lb">Next chronological</span><span class="lbS">chrono</span>&#9654;</button>
 </div>
 <script>
 const AB="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -565,6 +578,61 @@ function penNow(e,sub){
     return{u:u,P:[v[0]-d*u[0],v[1]-d*u[1],v[2]-d*u[2]],L1:e.pen.L1};}
   const u=llv(e.pen.u[0],e.pen.u[1]),a=llv(e.pen.c[0],e.pen.c[1]);
   return{u:u,P:[a[0]*e.pen.g,a[1]*e.pen.g,a[2]*e.pen.g],L1:e.pen.L1};}
+/* The region that sees any part of the eclipse: the union of the instantaneous
+   penumbral zones across the whole event, which is what published eclipse maps
+   draw and what actually encloses the entire track.
+
+   Frames come from the track times, then march outward past both ends — the
+   partial phases begin before the umbra lands and end after it leaves — using
+   the endpoint velocity of the axis foot, stopping once the penumbra no longer
+   reaches Earth at all. The boundary is then found by sweeping azimuths out from
+   the mid-eclipse point, which assumes the union is star-shaped about it; that
+   holds for the lens shape these regions actually take. Cached per eclipse. */
+function penFrames(e){
+  const L1=e.pen.L1,N=12,fr=[];
+  const uAt=mins=>{const jd=jdOf(e.ymd[0],e.ymd[1],e.ymd[2],((mins%1440)+1440)%1440);
+    const s=subsolar(jd),v=llv(s.lon,s.lat);return[-v[0],-v[1],-v[2]];};
+  for(let i=0;i<=N;i++){const f=i/N,mins=e.p.ut+e.p.span*(f-.5);
+    const u=uAt(mins),c=trackAt(e.p,f),v=llv(c[0],c[1]);
+    const d=v[0]*u[0]+v[1]*u[1]+v[2]*u[2];
+    fr.push({u:u,P:[v[0]-d*u[0],v[1]-d*u[1],v[2]-d*u[2]],m:mins});}
+  const step=e.p.span/N;
+  for(const dir of[-1,1]){
+    const a=dir<0?fr[0]:fr[fr.length-1],b=dir<0?fr[1]:fr[fr.length-2];
+    const dP=[a.P[0]-b.P[0],a.P[1]-b.P[1],a.P[2]-b.P[2]];
+    for(let k=1;k<=14;k++){
+      const P=[a.P[0]+dP[0]*k,a.P[1]+dP[1]*k,a.P[2]+dP[2]*k];
+      if(Math.hypot(P[0],P[1],P[2])>1+L1)break;
+      const m=a.m+dir*step*k,u=uAt(m);
+      const d=P[0]*u[0]+P[1]*u[1]+P[2]*u[2];
+      fr.push({u:u,P:[P[0]-d*u[0],P[1]-d*u[1],P[2]-d*u[2]],m:m});}}
+  return fr;}
+function penUnion(e){
+  if(!e||!e.p||!e.pen)return null;
+  if(e._pu)return e._pu;
+  const fr=penFrames(e),L1=e.pen.L1;
+  const inside=p=>{for(const f of fr){
+    const d=p[0]*f.u[0]+p[1]*f.u[1]+p[2]*f.u[2];
+    if(d>=0)continue;
+    const x=p[0]-d*f.u[0]-f.P[0],y=p[1]-d*f.u[1]-f.P[1],z=p[2]-d*f.u[2]-f.P[2];
+    if(x*x+y*y+z*z<L1*L1)return true;}
+    return false;};
+  const c0v=trackAt(e.p,.5),c0=llv(c0v[0],c0v[1]);
+  let e1=Math.abs(c0[2])<.9?[-c0[1],c0[0],0]:[0,-c0[2],c0[1]];
+  let n1=Math.hypot(e1[0],e1[1],e1[2]);e1=[e1[0]/n1,e1[1]/n1,e1[2]/n1];
+  const e2=[c0[1]*e1[2]-c0[2]*e1[1],c0[2]*e1[0]-c0[0]*e1[2],c0[0]*e1[1]-c0[1]*e1[0]];
+  const at=(th,r)=>{const cr=Math.cos(r),sr=Math.sin(r),ct=Math.cos(th),st=Math.sin(th);
+    return[cr*c0[0]+sr*(ct*e1[0]+st*e2[0]),cr*c0[1]+sr*(ct*e1[1]+st*e2[1]),
+           cr*c0[2]+sr*(ct*e1[2]+st*e2[2])];};
+  const out=[];
+  for(let i=0;i<=240;i++){const th=i/240*6.283185307;
+    let lo=0,hi=3.0;
+    if(!inside(at(th,1e-3))){out.push(null);continue;}
+    for(let b=0;b<17;b++){const mid=(lo+hi)/2;inside(at(th,mid))?lo=mid:hi=mid;}
+    const p=at(th,lo);
+    out.push([Math.atan2(p[1],p[0])/RAD,
+      Math.asin(Math.max(-1,Math.min(1,p[2])))/RAD]);}
+  e._pu=out;return out;}
 /* 1 where this stretch of the track is annular, 0 where it is total */
 function typeAt(p,f){if(!p.ts)return 0;
   return p.ts[Math.max(0,Math.min(p.ts.length-1,Math.round(f*(p.ts.length-1))))];}
@@ -597,8 +665,11 @@ function edges(p,n){const L=[],R=[],f0=.03,f1=.97,cap=Math.max(500,p.w*2.5);
 const tMin=e=>e&&e.p?((e.p.ut+e.p.span*(tFrac-.5))%1440+1440)%1440:720;
 function sizeGlobe(){
   const w=globeBox.clientWidth||320;
+  /* keep the globe inside whatever the panel actually is, or on a phone the
+     drawer scrolls and half the globe hides under the stats */
   const room=detail.classList.contains("expanded")
-    ?Math.max(280,(detail.clientHeight||520)-120):480;
+    ?Math.max(280,(detail.clientHeight||520)-120)
+    :Math.max(200,Math.min(480,(detail.clientHeight||420)-148));
   gSize=Math.max(190,Math.min(w,room));
   globeBox.style.height=gSize+"px";
   const dp=Math.min(devicePixelRatio||1,2);
@@ -666,10 +737,14 @@ function drawGlobe(){
     gb.fillStyle="rgba(244,241,230,.6)";gb.font='8.5px "IBM Plex Mono",monospace';
     gb.textAlign="center";gb.textBaseline="top";gb.fillText("sun overhead",ss.x,ss.y+10);}
   /* the whole area that sees a partial — the only geometry a partial eclipse has */
-  const pn=penNow(e,sub);
-  if(pn){gb.setLineDash([1.5,3.5]);gb.lineWidth=1.1;gb.globalAlpha=.9;
-    arc(penCurve(pn.u,pn.P,pn.L1,360),k,"#93a6bd");
-    gb.setLineDash([]);gb.globalAlpha=1;}
+  /* whole-event partial region where there is a track, single instant otherwise */
+  const pu=penUnion(e);
+  if(pu){gb.setLineDash([1.5,3.5]);gb.lineWidth=1.1;gb.globalAlpha=.9;
+    arc(pu,k,"#93a6bd");gb.setLineDash([]);gb.globalAlpha=1;}
+  else{const pn=penNow(e,sub);
+    if(pn){gb.setLineDash([1.5,3.5]);gb.lineWidth=1.1;gb.globalAlpha=.9;
+      arc(penCurve(pn.u,pn.P,pn.L1,360),k,"#93a6bd");
+      gb.setLineDash([]);gb.globalAlpha=1;}}
   if(e&&e.p){
     const ns=Math.round(Math.max(140,Math.min(420,90*Math.sqrt(gZoom))));
     const [eL_,eR_]=edges(e.p,ns);
@@ -708,7 +783,7 @@ function drawGlobe(){
       ?"partial only — the axis misses Earth; dotted line is the zone at greatest eclipse"
       :"track not computed before 1000 CE — dotted line is the zone at greatest eclipse",w/2,h-16);}
   else if(e){gb.textAlign="center";gb.fillStyle="#6b7a90";
-    gb.fillText("dotted outer line: everyone seeing a partial at this moment",w/2,h-16);}
+    gb.fillText("dotted outer line: everyone who sees any of this eclipse",w/2,h-16);}
 }
 const TPLAY=30000;   /* one crossing takes half a minute, whatever its length */
 function setTLab(){const e=sel;
@@ -745,15 +820,24 @@ expand.onclick=()=>{const on=detail.classList.toggle("expanded");
   expand.title=on?"Collapse back to the side panel":"Expand to fill the pane";
   requestAnimationFrame(()=>{if(detView==="globe")drawGlobe();else drawMap(sel);resize();});};
 /* spin + zoom */
-let gDrag=null;
-globe.addEventListener("pointerdown",ev=>{globe.setPointerCapture(ev.pointerId);
-  gDrag={x:ev.offsetX,y:ev.offsetY,lon:gLon,lat:gLat};globe.style.cursor="grabbing";});
-globe.addEventListener("pointermove",ev=>{if(!gDrag)return;
+let gDrag=null,gPts=new Map(),gPinch=null;
+globe.addEventListener("pointerdown",ev=>{gPts.set(ev.pointerId,ev);
+  if(gPts.size===1){globe.setPointerCapture(ev.pointerId);
+    gDrag={x:ev.offsetX,y:ev.offsetY,lon:gLon,lat:gLat};globe.style.cursor="grabbing";}
+  else gDrag=null;});
+globe.addEventListener("pointermove",ev=>{
+  if(gPts.has(ev.pointerId))gPts.set(ev.pointerId,ev);
+  if(gPts.size===2){const[a,b]=[...gPts.values()];
+    const dd=Math.hypot(a.offsetX-b.offsetX,a.offsetY-b.offsetY);
+    if(gPinch&&dd>0)gZoom=Math.max(.7,Math.min(GZMAX,gZoom*dd/gPinch));
+    gPinch=dd;drawGlobe();return;}
+  if(!gDrag)return;
   gLon=gDrag.lon-(ev.offsetX-gDrag.x)*.35/gZoom;
   gLat=Math.max(-89,Math.min(89,gDrag.lat+(ev.offsetY-gDrag.y)*.35/gZoom));
   gLon=((gLon+540)%360)-180;drawGlobe();});
-["pointerup","pointercancel"].forEach(t=>globe.addEventListener(t,()=>{
-  gDrag=null;globe.style.cursor="grab";}));
+["pointerup","pointercancel"].forEach(t=>globe.addEventListener(t,ev=>{
+  gPts.delete(ev.pointerId);if(gPts.size<2)gPinch=null;
+  if(gPts.size===0){gDrag=null;globe.style.cursor="grab";}}));
 globe.addEventListener("wheel",ev=>{ev.preventDefault();
   gZoom=Math.max(.7,Math.min(GZMAX,gZoom*(ev.deltaY>0?.88:1.136)));drawGlobe();},{passive:false});
 globe.addEventListener("dblclick",()=>{gZoom=1;faceEclipse();drawGlobe();});

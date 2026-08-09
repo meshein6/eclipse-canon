@@ -91,7 +91,7 @@ def main():
     print('borders and populated places ...')
     mapdata.fetch()
     a0, a1 = mapdata.borders()
-    plc = mapdata.places(min_pop=10000)
+    plc = mapdata.places(min_pop=25000)
     pdat_places, pnames = encode.pack_places(plc)
     print(f'  {sum(len(x) for x in a0)} country pts, {sum(len(x) for x in a1)} '
           f'province pts, {len(plc)} places')
