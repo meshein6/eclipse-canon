@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ephem
 from eclipses import catalogue
 from geometry import build as build_track, deltaT
+import cities
 import coastlines
 import encode
 from template import HTML
@@ -58,14 +59,18 @@ def main():
         if PATH_FROM <= r['y'] <= PATH_TO:
             t = ephem.Date(p['gj'] - 2415020.0).tuple()
             r['pts'] = p['pts']
+            r['wp'] = [int(round(min(w, 4095))) for w in p['wpts']]
             r['w'] = int(round(p['width']))
             r['dur'] = int(round(p['dur']))
             r['ut'] = int(round(t[3] * 60 + t[4] + t[5] / 60)) % 1440
+            # how long the umbra takes to cross, so the viewer can run a clock
+            r['span'] = int(round((p['end'] - p['start']) * 1440))
             n_track += 1
     print(f'  {len(durs)} durations, {n_track} drawn tracks')
 
     print('tracing coastlines ...')
-    coast = coastlines.polylines()
+    # 0.1-degree cells: fine enough that the globe still reads when zoomed in
+    coast = coastlines.polylines(step=12, tolerance=0.7, min_area=10)
     print(f'  {len(coast)} polygons, {sum(len(c) for c in coast)} points')
 
     meta = encode.pack_meta(rows, durs)
@@ -73,7 +78,8 @@ def main():
     html = (HTML.replace('__META__', meta)
                 .replace('__PIDX__', pidx)
                 .replace('__PDAT__', pdat)
-                .replace('__COAST__', encode.pack_coast(coast)))
+                .replace('__COAST__', encode.pack_coast(coast))
+                .replace('__CITIES__', cities.pack()))
     with open(args.out, 'w') as f:
         f.write(html)
 

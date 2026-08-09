@@ -163,7 +163,10 @@ def geometry(jd_ut):
     nrm = [P[0], P[1], P[2]/(OMF*OMF)]
     nn = sqrt(sum(c*c for c in nrm)); nrm = [c/nn for c in nrm]
     cosinc = abs(sum(nrm[i]*u[i] for i in range(3)))
-    width = 2*abs(rcone)*REQ / max(cosinc, 0.02)
+    # At the sunrise/sunset ends of a track the axis grazes the surface and this
+    # divisor runs to zero, so the "width" diverges. Floor it: the number stops
+    # being a width once the shadow is smeared along the horizon anyway.
+    width = 2*abs(rcone)*REQ / max(cosinc, 0.15)
     diam  = 2*abs(rcone)*REQ
     return width, ('A' if rcone > 0 else 'T'), diam
 
@@ -201,10 +204,15 @@ def build(jde_td, year, npts=15):
         if hits(m): a = m
         else: b = m
     end = a
-    pts = []
+    pts, wpts = [], []
     for i in range(npts):
-        p = axis_hit(start + (end-start)*i/(npts-1))
+        j = start + (end-start)*i/(npts-1)
+        p = axis_hit(j)
         pts.append(p if p else pts[-1])
+        # width at this point, so the viewer can draw the path edges rather
+        # than assume the greatest-eclipse width holds all the way across
+        g = geometry(j)
+        wpts.append(g[0] if g else (wpts[-1] if wpts else 0.0))
     # greatest eclipse: sample for max cone-axis proximity to geocentre (use widest ground track)
     best, bjd = None, None
     for i in range(41):
@@ -217,7 +225,7 @@ def build(jde_td, year, npts=15):
     g = geometry(gj)
     sp = ground_speed(gj)
     dur = (g[2]/sp) if (g and sp and sp > 0) else None
-    return dict(pts=pts, start=start, end=end, gj=gj,
+    return dict(pts=pts, wpts=wpts, start=start, end=end, gj=gj,
                 width=(g[0] if g else None), dur=dur)
 
 

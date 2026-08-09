@@ -22,9 +22,19 @@ builds into a single self-contained HTML file with no runtime dependencies.
   sweeping from −1.5 to +1.5: the umbra migrating pole to pole over ~1,250 years.
 
 Pan, zoom, filter by eclipse type, and size the dots by central duration. Tap any
-eclipse for its ground track, path width, maximum duration and time of greatest eclipse,
-with the two previous returns of the same series ghosted behind it to show the ~115°
-westward march.
+eclipse for its ground track, path width, maximum duration and time of greatest eclipse.
+On a wide screen the selected eclipse opens beside the canon; the canon returns to full
+width when nothing is selected.
+
+**Eclipse viewer** — the selected eclipse on an orthographic globe, spinnable by drag and
+zoomable to about 30×. It shows the central path, the northern and southern limits of the
+umbral path as dotted lines, the umbra itself at whatever moment the time slider is set
+to, the day/night terminator with a twilight gradient, and the sub-solar point. Run the
+slider (or hit play) and the shadow crosses while the terminator and the sun-overhead
+point move with it. **Expand** gives it the whole pane. City pins fade in as you zoom,
+in three tiers. The flat equirectangular map is still there under **Flat**, and that one
+ghosts the two previous returns of the same series behind the current track to show the
+~115° westward march.
 
 **Saros machine** — a 223-cell spiral dial, the same layout the Antikythera mechanism
 used. Its cells are 223 consecutive new moons: one saros. Because eclipses recur every
@@ -81,9 +91,16 @@ Structural checks: inex series 30 steps 2000 Feb 5 → 2029 Jan 14 → 2057 Dec 
 - Past ~2100 the ΔT projection shifts tracks east or west by tens of kilometres, growing
   with distance from now.
 - Tracks are sampled at 13 points across a ~3¼-hour crossing, so the drawn line is a
-  smooth interpolation. Path edges are not drawn — only the central line.
-- Coastlines are deliberately coarse. Use them for orientation, not to judge whether a
-  path clips a particular town.
+  smooth interpolation. The path limits are the per-point umbral width laid off
+  perpendicular to the track, which ignores the tilt of the shadow ellipse — good to a
+  few kilometres near greatest eclipse, rougher towards the ends.
+- Near the sunrise and sunset ends of a track the shadow axis grazes the surface and the
+  computed width diverges, so the incidence cosine is floored at 0.15. Widths within a few
+  hundred kilometres of either end are indicative only.
+- Coastlines are 0.1° (about 11 km) and there is **no country-border data** anywhere in
+  the project — the only geographic input is a land/sea raster. City pins are a hardcoded
+  list of 97 places in `src/cities.py`, the one table here that is not computed. Use all of
+  it for orientation, not to judge whether a path clips a particular town.
 - "Duration" means the central phase: totality for total eclipses, annularity for annular
   ones.
 
@@ -100,8 +117,9 @@ Writes `index.html` at the repo root. Open it directly — no server needed.
 ```
 src/
   eclipses.py    Meeus ch.49/54; dates, type, gamma, saros, inex
-  geometry.py    shadow axis, ground track, width, duration, delta-T
+  geometry.py    shadow axis, ground track, per-point width, duration, delta-T
   coastlines.py  land raster to simplified polylines
+  cities.py      hardcoded pin list — the only uncomputed data here
   encode.py      base64-style packing
   template.py    the single-page app
   build.py       orchestrates the above

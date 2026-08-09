@@ -42,8 +42,11 @@ main{flex:1;min-height:0;position:relative}
 .canonCol{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 #wrap{flex:1;position:relative;min-width:0;min-height:110px}
 canvas#cv{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
-.readout{flex:none;border-top:1px solid var(--rule);background:var(--ink2);padding:7px 12px;
- display:flex;gap:3px 18px;align-items:baseline;flex-wrap:wrap;font-size:11px;min-height:32px}
+.readout{flex:none;border-top:1px solid var(--rule);background:var(--ink2);padding:6px 10px;
+ display:flex;gap:8px;align-items:center;font-size:11px;min-height:34px}
+.rotext{flex:1;display:flex;gap:3px 18px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.zbtns{display:flex;gap:4px;align-items:center;flex:none}
+.zbtns button.b{padding:4px 9px;font-size:11px;line-height:1}
 .lbl{color:var(--dim);font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-right:5px}
 .date{font-family:"Newsreader",serif;font-style:italic;color:var(--corona)}
 .hint{color:var(--dim);font-size:10px}
@@ -53,6 +56,15 @@ em{font-style:normal;color:var(--corona)}
 #detail.open{height:min(58%,410px)}
 #detail .inner{overflow-y:auto;flex:1;min-height:0}
 #map{display:block;background:#04070c;border-bottom:1px solid var(--rule);margin:0 auto;max-width:100%}
+/* globe */
+.dtools{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:6px 10px;
+ border-bottom:1px solid var(--rule);background:var(--ink)}
+#globeBox{position:relative;width:100%;border-bottom:1px solid var(--rule);min-height:200px}
+#globe{display:block;width:100%;height:100%;background:#04070c;cursor:grab;touch-action:none}
+.tRow{display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--rule)}
+.tRow input[type=range]{flex:1;min-width:0;accent-color:var(--ring);height:16px}
+#tLab{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--corona);
+ white-space:nowrap;min-width:74px;text-align:right}
 /* desktop: canon left, selected eclipse right; full width when nothing is selected */
 @media (min-width:900px){
   #paneCanon{flex-direction:row}
@@ -60,6 +72,9 @@ em{font-style:normal;color:var(--corona)}
    transition:width .26s cubic-bezier(.4,0,.2,1)}
   #detail.open{width:min(46%,560px)}
 }
+/* expanded: the eclipse viewer takes the whole pane */
+#detail.expanded{position:absolute;inset:0;width:100%!important;height:100%!important;
+ z-index:5;border:0;border-left:0}
 /* machine */
 #mScroll{flex:1;overflow-y:auto;min-height:0}
 #dialBox{position:relative;width:100%;aspect-ratio:1/1;max-height:56vh}
@@ -81,6 +96,7 @@ button.b:hover:not(:disabled){color:var(--text);border-color:var(--dim)}
 button.b:disabled{opacity:.3;cursor:default}
 button.b.on{background:#182437;color:var(--corona);border-color:#2c3d52}
 button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
+.lb{font-size:9px;letter-spacing:.06em;text-transform:uppercase;margin:0 3px;opacity:.85}
 #stepInfo{flex:1;text-align:center;font-size:10.5px;line-height:1.35;min-width:0}
 #stepInfo .d{font-family:"Newsreader",serif;font-style:italic;font-size:14px;color:var(--corona);display:block}
 @media (max-width:520px){h1{font-size:16px}header{padding:9px 11px 6px}.bar{padding:6px 11px;gap:6px}
@@ -111,9 +127,30 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
   <section class="pane on" id="paneCanon">
     <div class="canonCol">
       <div id="wrap"><canvas id="cv"></canvas></div>
-      <div class="readout" id="ro"></div>
+      <div class="readout">
+        <div class="rotext" id="ro"></div>
+        <div class="zbtns">
+          <button class="b" id="zOut" aria-label="Zoom out">&minus;</button>
+          <button class="b" id="zIn" aria-label="Zoom in">+</button>
+          <button class="b" id="zRst" aria-label="Reset the view">Reset</button>
+        </div>
+      </div>
     </div>
     <div id="detail"><div class="inner">
+      <div class="dtools">
+        <div class="seg" role="group" aria-label="Projection">
+          <button id="vGlobe" aria-pressed="true">Globe</button><button id="vFlat" aria-pressed="false">Flat</button>
+        </div>
+        <button class="b" id="expand" aria-pressed="false">Expand</button>
+        <div class="spacer"></div>
+        <span class="hint" id="gHint">drag to spin &middot; scroll to zoom</span>
+      </div>
+      <div id="globeBox"><canvas id="globe"></canvas></div>
+      <div class="tRow" id="tRow">
+        <button class="b" id="tPlay" aria-label="Animate the crossing">&#9654;</button>
+        <input type="range" id="tSlide" min="0" max="1000" value="500" aria-label="Time through the eclipse">
+        <span id="tLab">--:-- UT</span>
+      </div>
       <canvas id="map"></canvas>
       <div class="blk"><div class="grid2" id="pStats"></div></div>
       <div class="blk"><div class="note" id="pNote"></div></div>
@@ -157,10 +194,13 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
   </section>
 </main>
 <div class="foot">
-  <button class="b" id="prev" aria-label="Previous in series">&#9664;</button>
+  <button class="b" id="prevT" aria-label="Previous eclipse in time">&#9664;<span class="lb">time</span></button>
+  <button class="b" id="prev" aria-label="Previous in this saros series">&#9664;<span class="lb">saros</span></button>
   <div id="stepInfo"><span class="d">Select an eclipse</span><span class="hint" id="stepSub">tap a point on the canon</span></div>
-  <button class="b" id="play" aria-label="Play through series">&#9654;&#9654;</button>
-  <button class="b" id="next" aria-label="Next in series">&#9654;</button>
+  <button class="b" id="play" aria-label="Play through this saros series">&#9654;&#9654;</button>
+  <button class="b" id="clr" aria-label="Clear selection">Clear</button>
+  <button class="b" id="next" aria-label="Next in this saros series"><span class="lb">saros</span>&#9654;</button>
+  <button class="b" id="nextT" aria-label="Next eclipse in time"><span class="lb">time</span>&#9654;</button>
 </div>
 <script>
 const AB="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -168,9 +208,12 @@ const IX={};for(let i=0;i<64;i++)IX[AB[i]]=i;
 const g2=(s,i)=>IX[s[i]]*64+IX[s[i+1]];
 const g4=(s,i)=>((IX[s[i]]*64+IX[s[i+1]])*64+IX[s[i+2]])*64+IX[s[i+3]];
 const gL=(s,i,lo,hi)=>lo+g2(s,i)/4095*(hi-lo);
+const g3=(s,i)=>((IX[s[i]]*64+IX[s[i+1]])*64+IX[s[i+2]]);
+const gL3=(s,i,lo,hi)=>lo+g3(s,i)/262143*(hi-lo);
 const META="__META__",PIDX="__PIDX__",PDAT="__PDAT__";
 const TYPES=["Total","Annular","Hybrid","Partial"],COL=["#f4f1e6","#e8a33d","#d76b52","#43536b"];
 const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const CITIES=__CITIES__;
 const LAND="__COAST__".split("~").map(s=>{const o=[];
   for(let i=0;i<s.length;i+=4)o.push([gL(s,i,-180,180),gL(s,i+2,-90,90)]);return o;});
 const E=[];
@@ -184,9 +227,10 @@ for(let i=0,n=0;i<META.length;i+=15,n++){
 const MAXDUR=Math.max(...E.map(e=>e.dur));
 for(const e of E)e.cell=((e.k%223)+223)%223;
 for(let i=0;i<PIDX.length;i+=4){
-  const at=g4(PIDX,i),b=PDAT.substr(i/4*58,58),pts=[];
-  for(let q=0;q<52;q+=4)pts.push([gL(b,q,-180,180),gL(b,q+2,-90,90)]);
-  E[at].p={pts:pts,ut:g2(b,52),w:g2(b,54),dur:g2(b,56)};
+  const at=g4(PIDX,i),b=PDAT.substr(i/4*112,112),pts=[],ws=[];
+  for(let q=0;q<78;q+=6)pts.push([gL3(b,q,-180,180),gL3(b,q+3,-90,90)]);
+  for(let q=86;q<112;q+=2)ws.push(g2(b,q));
+  E[at].p={pts:pts,ut:g2(b,78),w:g2(b,80),dur:g2(b,82),span:g2(b,84),ws:ws};
 }
 const BY={saros:new Map(),inex:new Map()};
 for(const e of E){for(const[k,v]of[["saros",e.S],["inex",e.I]]){
@@ -369,7 +413,7 @@ function drawMap(e){
     const arr=BY.saros.get(e.S),i=arr.indexOf(e);
     for(const[ev,col,lw]of[[arr[i-2],"#6d5430",1.2],[arr[i-1],"#b58b4c",1.5],[e,COL[e.t],2.2]]){
       if(!ev||!ev.p)continue;
-      const pts=ev.p.pts,segs=[[]];
+      const pts=smooth(ev.p,80),segs=[[]];
       for(let q=0;q<pts.length;q++){
         if(q&&Math.abs(pts[q][0]-pts[q-1][0])>180)segs.push([]);
         segs[segs.length-1].push(pts[q]);}
@@ -386,9 +430,213 @@ function drawMap(e){
     mc.fillText(e.t===3?"no central path \u2014 the axis misses Earth":"path not computed before 1000 CE",w/2,h/2);}
   mc.strokeStyle="#1e2836";mc.strokeRect(.5,.5,w-1,h-1);
 }
+/* ---------- globe ---------- */
+const globe=document.getElementById("globe"),gb=globe.getContext("2d");
+const globeBox=document.getElementById("globeBox");
+const RAD=Math.PI/180;
+let gLon=0,gLat=20,gZoom=1,detView="globe",tFrac=.5,tTimer=null,gSize=0;
+const llv=(lon,lat)=>{const c=Math.cos(lat*RAD);
+  return[c*Math.cos(lon*RAD),c*Math.sin(lon*RAD),Math.sin(lat*RAD)];};
+/* mirrors jd_to_date in eclipses.py: Julian calendar before 1582 Oct 15 */
+function jdOf(y,m,d,mins){let Y=y,M=m;if(M<=2){Y-=1;M+=12;}
+  const greg=(y>1582)||(y===1582&&(m>10||(m===10&&d>=15)));
+  const B=greg?(2-Math.floor(Y/100)+Math.floor(Math.floor(Y/100)/4)):0;
+  return Math.floor(365.25*(Y+4716))+Math.floor(30.6001*(M+1))+d+B-1524.5+mins/1440;}
+function subsolar(jd){const n=jd-2451545.0;
+  const L=(280.460+0.9856474*n)%360,g=(357.528+0.9856003*n)%360;
+  const lam=(L+1.915*Math.sin(g*RAD)+0.020*Math.sin(2*g*RAD))*RAD;
+  const eps=(23.439-0.0000004*n)*RAD;
+  const dec=Math.asin(Math.sin(eps)*Math.sin(lam))/RAD;
+  const ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam))/RAD;
+  const gmst=(280.46061837+360.98564736629*n)%360;
+  return{lat:dec,lon:((ra-gmst)%360+540)%360-180};}
+function camOf(w,h){const R=Math.min(w,h)*.46*gZoom,sl=Math.sin(gLon*RAD),cl=Math.cos(gLon*RAD);
+  return{cx:w/2,cy:h/2,R:R,c:llv(gLon,gLat),e:[-sl,cl,0],
+    n:[-Math.sin(gLat*RAD)*cl,-Math.sin(gLat*RAD)*sl,Math.cos(gLat*RAD)]};}
+function pj(lon,lat,k){const p=llv(lon,lat);
+  return{x:k.cx+k.R*(p[0]*k.e[0]+p[1]*k.e[1]+p[2]*k.e[2]),
+         y:k.cy-k.R*(p[0]*k.n[0]+p[1]*k.n[1]+p[2]*k.n[2]),
+         v:p[0]*k.c[0]+p[1]*k.c[1]+p[2]*k.c[2]};}
+/* polyline with the far side of the sphere dropped */
+function arc(pts,k,cl){gb.beginPath();let up=false;
+  for(const q of pts){const s=pj(q[0],q[1],k);
+    if(s.v<=0){up=false;continue;}
+    up?gb.lineTo(s.x,s.y):gb.moveTo(s.x,s.y);up=true;}
+  gb.strokeStyle=cl;gb.stroke();}
+/* night is shaded per pixel: cheap, and gives a real twilight gradient */
+function shade(k,w,h,sub){const s=llv(sub.lon,sub.lat),sc=2;
+  const ow=Math.max(2,Math.ceil(w/sc)),oh=Math.max(2,Math.ceil(h/sc));
+  if(!shade.cv)shade.cv=document.createElement("canvas");
+  const oc=shade.cv;if(oc.width!==ow||oc.height!==oh){oc.width=ow;oc.height=oh;}
+  const ox=oc.getContext("2d"),img=ox.createImageData(ow,oh),D=img.data;
+  for(let py=0;py<oh;py++)for(let px=0;px<ow;px++){
+    const X=(px*sc+sc/2-k.cx)/k.R,Y=-(py*sc+sc/2-k.cy)/k.R,q=X*X+Y*Y;
+    if(q>1)continue;
+    const Z=Math.sqrt(1-q);
+    const wx=X*k.e[0]+Y*k.n[0]+Z*k.c[0],wy=X*k.e[1]+Y*k.n[1]+Z*k.c[1],
+          wz=X*k.e[2]+Y*k.n[2]+Z*k.c[2];
+    const el=Math.asin(Math.max(-1,Math.min(1,wx*s[0]+wy*s[1]+wz*s[2])))/RAD;
+    if(el>=0)continue;
+    const a=el<-18?.78:.78*(-el/18),o=(py*ow+px)*4;
+    D[o]=2;D[o+1]=6;D[o+2]=14;D[o+3]=Math.round(a*255);}
+  ox.putImageData(img,0,0);return oc;}
+/* The track is 13 samples about 15 minutes apart. Joining them with straight
+   chords puts visible kinks in a curve that is actually smooth, so interpolate
+   with a Catmull-Rom spline. Longitudes are unwrapped first or the spline tears
+   at the antimeridian. */
+function prep(p){if(p._la)return p;
+  const lo=[p.pts[0][0]];
+  for(let i=1;i<p.pts.length;i++)lo.push(lo[i-1]+(((p.pts[i][0]-p.pts[i-1][0]+540)%360)-180));
+  p._lo=lo;p._la=p.pts.map(q=>q[1]);return p;}
+const at_=(a,i)=>a[Math.max(0,Math.min(a.length-1,i))];
+const cr=(a,b,c,d,t)=>{const t2=t*t,t3=t2*t;
+  return .5*(2*b+(c-a)*t+(2*a-5*b+4*c-d)*t2+(3*b-3*c+d-a)*t3);};
+function spl(arr,x){const i=Math.floor(x),t=x-i;
+  return cr(at_(arr,i-1),at_(arr,i),at_(arr,i+1),at_(arr,i+2),t);}
+const fIdx=(p,f)=>Math.max(0,Math.min(p.pts.length-1-1e-9,f*(p.pts.length-1)));
+function trackAt(p,f){prep(p);const x=fIdx(p,f);
+  return[((spl(p._lo,x)+540)%360)-180,Math.max(-90,Math.min(90,spl(p._la,x)))];}
+function widthAt(p,f){if(!p.ws)return p.w;
+  const v=spl(p.ws,fIdx(p,f));
+  return Math.max(1,Math.min(v,Math.max(600,p.w*6)));}
+const smooth=(p,n)=>{const o=[];for(let i=0;i<=n;i++)o.push(trackAt(p,i/n));return o;};
+/* great-circle bearing and offset, for the path edges */
+function bearing(a,b){const la1=a[1]*RAD,la2=b[1]*RAD,dl=(b[0]-a[0])*RAD;
+  return Math.atan2(Math.sin(dl)*Math.cos(la2),
+    Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dl));}
+function dest(lon,lat,brg,km){const d=km/6371,la=lat*RAD;
+  const la2=Math.asin(Math.sin(la)*Math.cos(d)+Math.cos(la)*Math.sin(d)*Math.cos(brg));
+  const lo2=lon*RAD+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(la),
+    Math.cos(d)-Math.sin(la)*Math.sin(la2));
+  return[((lo2/RAD+540)%360)-180,la2/RAD];}
+/* The two limits of the central path, offset from the centre line by half the
+   local umbral width. Kept away from the extreme ends: there the axis grazes the
+   surface, the width balloons past 800 km, and offsetting a sharply curving line
+   by that much makes the offset curve fold back on itself. The bearing baseline
+   is deliberately wide, since a short one turns coordinate noise into visible
+   faceting. */
+function edges(p,n){const L=[],R=[],f0=.03,f1=.97,cap=Math.max(500,p.w*2.5);
+  for(let i=0;i<=n;i++){const f=f0+(f1-f0)*i/n,c=trackAt(p,f);
+    const a=trackAt(p,Math.max(0,f-.012)),b=trackAt(p,Math.min(1,f+.012));
+    const br=bearing(a,b),hw=Math.min(widthAt(p,f),cap)/2;
+    L.push(dest(c[0],c[1],br-Math.PI/2,hw));
+    R.push(dest(c[0],c[1],br+Math.PI/2,hw));}
+  return[L,R];}
+const tMin=e=>e&&e.p?((e.p.ut+e.p.span*(tFrac-.5))%1440+1440)%1440:720;
+function sizeGlobe(){
+  const w=globeBox.clientWidth||320;
+  const room=detail.classList.contains("expanded")
+    ?Math.max(280,(detail.clientHeight||520)-120):480;
+  gSize=Math.max(190,Math.min(w,room));
+  globeBox.style.height=gSize+"px";
+  const dp=Math.min(devicePixelRatio||1,2);
+  globe.width=Math.round(w*dp);globe.height=Math.round(gSize*dp);
+  gb.setTransform(dp,0,0,dp,0,0);
+  return{w:w,h:gSize};}
+function drawGlobe(){
+  if(detView!=="globe")return;
+  const {w,h}=sizeGlobe();if(!w)return;
+  const e=sel,k=camOf(w,h);
+  gb.clearRect(0,0,w,h);
+  gb.save();gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.clip();
+  gb.fillStyle="#071624";gb.fill();
+  gb.lineWidth=1;
+  const gr=gZoom>=8?5:gZoom>=3?10:30,gs=Math.min(3,gr/4);
+  for(let lon=-180;lon<180;lon+=gr){const p=[];
+    for(let la=-90;la<=90;la+=gs)p.push([lon,la]);arc(p,k,"#0f1e2c");}
+  for(let la=-90+gr;la<90;la+=gr){const p=[];
+    for(let lo=-180;lo<=180;lo+=gs)p.push([lo,la]);arc(p,k,"#0f1e2c");}
+  gb.lineWidth=.9;
+  for(const poly of LAND)arc(poly.concat([poly[0]]),k,"#2f4a63");
+  gb.restore();
+  gb.save();gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.clip();
+  const jd=e?jdOf(e.ymd[0],e.ymd[1],e.ymd[2],tMin(e)):2451545.0;
+  const sub=subsolar(jd);
+  gb.drawImage(shade(k,w,h,sub),0,0,w,h);
+  /* city pins, once you are zoomed in far enough for them to mean anything */
+  if(gZoom>=1.8){
+    gb.font='9px "IBM Plex Mono",monospace';gb.textAlign="left";gb.textBaseline="middle";
+    /* each tier ramps in over a zoom octave rather than popping on */
+    const fade=(z0,z1)=>Math.max(0,Math.min(1,(gZoom-z0)/(z1-z0)));
+    const al=[0,fade(1.8,2.6),fade(3.2,4.6),fade(6,8.5)];
+    for(const c of CITIES){const a=al[c[3]];if(a<=.02)continue;
+      const s=pj(c[1],c[2],k);if(s.v<=0.02)continue;
+      if(s.x<-20||s.x>w+20||s.y<-20||s.y>h+20)continue;
+      gb.globalAlpha=a;
+      gb.fillStyle="#b58b4c";gb.beginPath();gb.arc(s.x,s.y,1.9,0,6.2832);gb.fill();
+      if(gZoom>=2.6){gb.fillStyle="#aebac9";gb.fillText(c[0],s.x+4.5,s.y);}}
+    gb.globalAlpha=1;}
+  const ss=pj(sub.lon,sub.lat,k);
+  if(ss.v>0){gb.fillStyle="rgba(244,241,230,.9)";gb.beginPath();gb.arc(ss.x,ss.y,3,0,6.2832);gb.fill();
+    gb.strokeStyle="rgba(244,241,230,.35)";gb.lineWidth=1;gb.beginPath();gb.arc(ss.x,ss.y,7,0,6.2832);gb.stroke();
+    gb.fillStyle="rgba(244,241,230,.6)";gb.font='8.5px "IBM Plex Mono",monospace';
+    gb.textAlign="center";gb.textBaseline="top";gb.fillText("sun overhead",ss.x,ss.y+10);}
+  if(e&&e.p){
+    const ns=Math.round(Math.max(140,Math.min(420,90*Math.sqrt(gZoom))));
+    const [eL_,eR_]=edges(e.p,ns);
+    gb.setLineDash([2,3]);gb.lineWidth=1;gb.globalAlpha=.75;
+    arc(eL_,k,COL[e.t]);arc(eR_,k,COL[e.t]);
+    gb.setLineDash([]);gb.globalAlpha=1;
+    gb.lineWidth=2;gb.lineCap="round";
+    arc(smooth(e.p,ns),k,COL[e.t]);
+    const u=trackAt(e.p,tFrac),us=pj(u[0],u[1],k);
+    if(us.v>0){
+      const rr=Math.max(2.5,k.R*(widthAt(e.p,tFrac)/2)/6371);
+      gb.fillStyle="rgba(7,10,16,.85)";gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.fill();
+      gb.strokeStyle=COL[e.t];gb.lineWidth=1.6;gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.stroke();
+      gb.strokeStyle=COL[e.t];gb.globalAlpha=.5;gb.lineWidth=1;
+      gb.beginPath();gb.arc(us.x,us.y,rr+6,0,6.2832);gb.stroke();gb.globalAlpha=1;}
+  }
+  gb.restore();
+  gb.strokeStyle="#2b3d52";gb.lineWidth=1;gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.stroke();
+  gb.fillStyle="#4d5c72";gb.font='9px "IBM Plex Mono",monospace';
+  gb.textAlign="left";gb.textBaseline="top";
+  gb.fillText("sub-solar "+sub.lat.toFixed(1)+"° "+sub.lon.toFixed(1)+"°",8,8);
+  gb.fillText("×"+gZoom.toFixed(1)+(gZoom<2.2?"  — zoom in for cities":""),8,21);
+  if(e&&!e.p){gb.textAlign="center";gb.fillStyle="#5d6b80";
+    gb.fillText(e.t===3?"partial — the axis misses Earth":"track not computed before 1000 CE",w/2,h-16);}
+}
+function setTLab(){const e=sel;
+  tLab.textContent=e&&e.p?utf(Math.round(tMin(e))):"--:-- UT";}
+function stopT(){if(tTimer){clearInterval(tTimer);tTimer=null;tPlay.classList.remove("on");
+  tPlay.innerHTML="&#9654;";}}
+tPlay.onclick=()=>{if(tTimer){stopT();return;}
+  if(!sel||!sel.p)return;
+  tPlay.classList.add("on");tPlay.innerHTML="&#9646;&#9646;";
+  tTimer=setInterval(()=>{tFrac+=.02;if(tFrac>1)tFrac=0;
+    tSlide.value=Math.round(tFrac*1000);setTLab();drawGlobe();},70);};
+tSlide.oninput=()=>{stopT();tFrac=+tSlide.value/1000;setTLab();drawGlobe();};
+function setDetView(v){detView=v;
+  vGlobe.setAttribute("aria-pressed",String(v==="globe"));
+  vFlat.setAttribute("aria-pressed",String(v==="flat"));
+  globeBox.style.display=v==="globe"?"block":"none";
+  tRow.style.display=v==="globe"?"flex":"none";
+  mp.style.display=v==="globe"?"none":"block";
+  gHint.textContent=v==="globe"?"drag to spin · scroll to zoom":"flat overview";
+  if(v==="globe")drawGlobe();else drawMap(sel);}
+vGlobe.onclick=()=>setDetView("globe");vFlat.onclick=()=>setDetView("flat");
+expand.onclick=()=>{const on=detail.classList.toggle("expanded");
+  expand.setAttribute("aria-pressed",String(on));expand.classList.toggle("on",on);
+  expand.textContent=on?"Collapse":"Expand";
+  requestAnimationFrame(()=>{if(detView==="globe")drawGlobe();else drawMap(sel);resize();});};
+/* spin + zoom */
+let gDrag=null;
+globe.addEventListener("pointerdown",ev=>{globe.setPointerCapture(ev.pointerId);
+  gDrag={x:ev.offsetX,y:ev.offsetY,lon:gLon,lat:gLat};globe.style.cursor="grabbing";});
+globe.addEventListener("pointermove",ev=>{if(!gDrag)return;
+  gLon=gDrag.lon-(ev.offsetX-gDrag.x)*.35/gZoom;
+  gLat=Math.max(-89,Math.min(89,gDrag.lat+(ev.offsetY-gDrag.y)*.35/gZoom));
+  gLon=((gLon+540)%360)-180;drawGlobe();});
+["pointerup","pointercancel"].forEach(t=>globe.addEventListener(t,()=>{
+  gDrag=null;globe.style.cursor="grab";}));
+globe.addEventListener("wheel",ev=>{ev.preventDefault();
+  gZoom=Math.max(.7,Math.min(30,gZoom*(ev.deltaY>0?.9:1.111)));drawGlobe();},{passive:false});
+globe.addEventListener("dblclick",()=>{gZoom=1;faceEclipse();drawGlobe();});
+function faceEclipse(){if(sel&&sel.p){const c=trackAt(sel.p,.5);gLon=c[0];gLat=c[1];}}
 /* the panel animates open, so its final size is only known once it settles */
 detail.addEventListener("transitionend",ev=>{
-  if(ev.propertyName==="width"||ev.propertyName==="height")drawMap(sel);});
+  if(ev.propertyName==="width"||ev.propertyName==="height"){
+    if(detView==="globe")drawGlobe();else drawMap(sel);}});
 /* ---------- machine ---------- */
 const dial=document.getElementById("dial"),dx=dial.getContext("2d");
 const geom=document.getElementById("geom"),gx=geom.getContext("2d");
@@ -501,8 +749,11 @@ function pickIn(e){const arr=BY.saros.get(e.S);return{arr:arr,i:arr.indexOf(e)};
 function select(e,openDetail){
   sel=e;
   if(openDetail!==false)detail.classList.add("open");
+  stopT();tFrac=.5;tSlide.value=500;tSlide.disabled=!e.p;
+  tPlay.disabled=!e.p;
+  faceEclipse();setTLab();
   const {arr,i}=pickIn(e);
-  prev.disabled=i<=0;next.disabled=i>=arr.length-1;
+  syncNav();
   stepInfo.innerHTML='<span class="d">'+dstr(e)+'</span><span class="hint">saros '+e.S+
     ' &middot; '+(i+1)+' of '+arr.length+' &middot; '+TYPES[e.t]+'</span>';
   const c=(l,v)=>'<div><span class="lbl" style="display:block;margin-bottom:2px">'+l+'</span><span class="v">'+v+'</span></div>';
@@ -522,9 +773,34 @@ function select(e,openDetail){
   refresh();
 }
 function step(d){if(!sel)return;const{arr,i}=pickIn(sel);const n=arr[i+d];if(n)select(n,detail.classList.contains("open"));}
-function refresh(){draw();setReadout();if(tab==="canon")drawMap(sel);else{drawDial();drawGeom();}}
+/* chronological neighbour, skipping types the filters have switched off */
+function nextVisible(from,d){for(let j=from+d;j>=0&&j<E.length;j+=d)if(on[E[j].t])return E[j];return null;}
+const navBase=d=>sel?sel.i:(d>0?lo_((view.x0+view.x1)/2)-1:lo_((view.x0+view.x1)/2));
+function stepTime(d){const n=nextVisible(navBase(d),d);
+  if(n){stop();select(n,sel?detail.classList.contains("open"):true);}}
+function deselect(){stop();stopT();sel=null;hover=null;
+  detail.classList.remove("open");detail.classList.remove("expanded");
+  expand.setAttribute("aria-pressed","false");expand.classList.remove("on");expand.textContent="Expand";
+  stepInfo.innerHTML='<span class="d">Select an eclipse</span><span class="hint">tap a point on the canon</span>';
+  tSlide.disabled=true;tPlay.disabled=true;tLab.textContent="--:-- UT";
+  syncNav();refresh();}
+function syncNav(){
+  if(sel){const{arr,i}=pickIn(sel);prev.disabled=i<=0;next.disabled=i>=arr.length-1;}
+  else{prev.disabled=true;next.disabled=true;}
+  prevT.disabled=!nextVisible(navBase(-1),-1);
+  nextT.disabled=!nextVisible(navBase(1),1);
+  clr.disabled=!sel;play.disabled=!sel;}
+function refresh(){draw();setReadout();
+  if(tab==="canon"){if(detView==="globe")drawGlobe();else drawMap(sel);}
+  else{drawDial();drawGeom();}}
 prev.onclick=()=>{stop();step(-1);};
 next.onclick=()=>{stop();step(1);};
+prevT.onclick=()=>stepTime(-1);
+nextT.onclick=()=>stepTime(1);
+clr.onclick=()=>deselect();
+zIn.onclick=()=>zoomAt((PAD.l+W-PAD.r)/2,.7);
+zOut.onclick=()=>zoomAt((PAD.l+W-PAD.r)/2,1.43);
+zRst.onclick=()=>{view.x0=nowY-30;view.x1=nowY+30;fitY();draw();setReadout();syncNav();};
 function stop(){if(timer){clearInterval(timer);timer=null;play.classList.remove("on");}}
 play.onclick=()=>{
   if(timer){stop();return;}
@@ -541,16 +817,17 @@ function setTab(t){tab=t;
   paneCanon.classList.toggle("on",t==="canon");
   paneMach.classList.toggle("on",t==="machine");
   axisSeg.style.display=t==="canon"?"flex":"none";
-  requestAnimationFrame(()=>{if(t==="canon"){resize();drawMap(sel);}else{drawDial();drawGeom();}});}
+  requestAnimationFrame(()=>{if(t==="canon"){resize();
+    if(detView==="globe")drawGlobe();else drawMap(sel);}else{drawDial();drawGeom();}});}
 tCanon.onclick=()=>setTab("canon");tMach.onclick=()=>setTab("machine");
 szBtn.onclick=()=>{szDur=!szDur;szBtn.setAttribute("aria-pressed",String(szDur));
   szBtn.classList.toggle("on",szDur);
   szBtn.innerHTML=szDur?"\u25c9 Duration":"\u25cf Even";draw();setReadout();};
 document.querySelectorAll(".key").forEach(b=>b.onclick=()=>{
   const t=+b.dataset.t;on[t]=!on[t];b.setAttribute("aria-pressed",String(on[t]));
-  if(sel&&!on[sel.t]){}refresh();});
-new ResizeObserver(()=>{if(tab==="canon")drawMap(sel);else{drawDial();drawGeom();}})
-  .observe(document.querySelector("main"));
+  if(sel&&!on[sel.t])deselect();else{syncNav();refresh();}});
+new ResizeObserver(()=>{if(tab==="canon"){if(detView==="globe")drawGlobe();else drawMap(sel);}
+  else{drawDial();drawGeom();}}).observe(document.querySelector("main"));
 /* ---------- canon interaction ---------- */
 function pick(px,py){let b=null,bd=17*17;
   const a0=Math.max(0,lo_(view.x0)-4),a1=Math.min(E.length,lo_(view.x1)+4);
@@ -603,18 +880,22 @@ cv.addEventListener("pointermove",ev=>{
   if(h!==hover){hover=h;cv.style.cursor=h?"pointer":"grab";draw();setReadout();}});
 ["pointerup","pointercancel"].forEach(t=>cv.addEventListener(t,ev=>{
   if(t==="pointerup"&&!moved&&pts.size===1){const h=pick(ev.offsetX,ev.offsetY);
-    if(h){stop();select(h);}else if(sel){detail.classList.remove("open");
-      setTimeout(()=>drawMap(sel),300);}}
+    if(h){stop();select(h);}else if(sel)deselect();}
   pts.delete(ev.pointerId);if(pts.size<2)pinch=null;
   if(pts.size===0){drag=null;cv.style.cursor="grab";}}));
 /* only drop hover here: killing the drag would break panning past the canvas edge */
 cv.addEventListener("pointerleave",()=>{if(pts.size===0){drag=null;pinch=null;}
   if(hover){hover=null;draw();setReadout();}});
 cv.addEventListener("dblclick",()=>{view.x0=nowY-30;view.x1=nowY+30;fitY();draw();setReadout();});
+/* horizontal keys walk the time axis, vertical keys walk the saros axis —
+   the same two directions the canon itself is plotted on */
 addEventListener("keydown",e=>{
-  if(e.key==="ArrowLeft"&&sel){step(-1);e.preventDefault();}
-  else if(e.key==="ArrowRight"&&sel){step(1);e.preventDefault();}
-  else if(e.key==="Escape"){stop();detail.classList.remove("open");}});
+  if(e.target&&(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"))return;
+  if(e.key==="ArrowLeft"){stepTime(-1);e.preventDefault();}
+  else if(e.key==="ArrowRight"){stepTime(1);e.preventDefault();}
+  else if(e.key==="ArrowUp"&&sel){stop();step(-1);e.preventDefault();}
+  else if(e.key==="ArrowDown"&&sel){stop();step(1);e.preventDefault();}
+  else if(e.key==="Escape"){deselect();}});
 function setMode(m){if(m===mode)return;
   const from=new Map();for(const e of E)from.set(e,baseYv(e));
   const fy0=view.y0,fy1=view.y1;mode=m;fitY();
@@ -630,6 +911,8 @@ function setMode(m){if(m===mode)return;
     if(p<1)requestAnimationFrame(s);else{yvOverride=null;view.y0=ty0;view.y1=ty1;draw();setReadout();}})(t0);}
 mSaros.onclick=()=>setMode("saros");mInex.onclick=()=>setMode("inex");mGamma.onclick=()=>setMode("gamma");
 resize();
+tSlide.disabled=true;tPlay.disabled=true;
+setDetView("globe");syncNav();
 </script>
 </body>
 </html>'''

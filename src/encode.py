@@ -12,9 +12,23 @@ def e4(n):
     return AB[(n >> 18) & 63] + AB[(n >> 12) & 63] + AB[(n >> 6) & 63] + AB[n & 63]
 
 
+def e3(n):
+    n = max(0, min(262143, int(round(n))))
+    return AB[(n >> 12) & 63] + AB[(n >> 6) & 63] + AB[n & 63]
+
+
 def eL(v, lo, hi):
     """Quantise a bounded float to two characters (4096 levels)."""
     return e2((v - lo) / (hi - lo) * 4095)
+
+
+def eL3(v, lo, hi):
+    """Three characters, 262144 levels: about 150 m of longitude.
+
+    Two characters is only ~10 km, which the globe's 30x zoom shows as a visible
+    wobble once the track is splined through the points.
+    """
+    return e3((v - lo) / (hi - lo) * 262143)
 
 
 def pack_meta(rows, durs):
@@ -29,14 +43,17 @@ def pack_meta(rows, durs):
 
 
 def pack_paths(rows):
-    """Index of eclipses with a track, plus 13 lon/lat pairs + UT + width + duration."""
+    """Index of eclipses with a track, then 112 chars per record: 13 lon/lat pairs
+    at 3 chars each, UT, width, duration, crossing span, 13 per-point widths."""
     idx, dat = [], []
     for i, r in enumerate(rows):
         if 'pts' not in r:
             continue
         idx.append(e4(i))
-        dat.append("".join(eL(p[0], -180, 180) + eL(p[1], -90, 90) for p in r['pts'])
-                   + e2(r['ut']) + e2(min(r['w'], 4095)) + e2(min(r['dur'], 4095)))
+        dat.append("".join(eL3(p[0], -180, 180) + eL3(p[1], -90, 90) for p in r['pts'])
+                   + e2(r['ut']) + e2(min(r['w'], 4095)) + e2(min(r['dur'], 4095))
+                   + e2(min(r['span'], 4095))
+                   + "".join(e2(w) for w in r['wp']))
     return "".join(idx), "".join(dat)
 
 
