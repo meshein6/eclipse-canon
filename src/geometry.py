@@ -158,7 +158,10 @@ def geometry(jd_ut):
     Ps = [Ms[i] + t*us[i] for i in range(3)]
     P = (Ps[0], Ps[1], Ps[2]*OMF)                    # back to real coords
     D = sqrt(sum((P[i]-M[i])**2 for i in range(3)))  # Moon -> surface distance
-    rcone = RMOON - D*(RSUN - RMOON)/dsm             # <0 => umbra, >0 => antumbra
+    # rcone = (RSUN-RMOON)/dsm * (vertex_distance - D), so it is positive while the
+    # surface is still short of the cone's vertex: that is the umbra, and the
+    # eclipse is total. Negative means past the vertex, in the antumbra: annular.
+    rcone = RMOON - D*(RSUN - RMOON)/dsm
     # local outward normal of the ellipsoid
     nrm = [P[0], P[1], P[2]/(OMF*OMF)]
     nn = sqrt(sum(c*c for c in nrm)); nrm = [c/nn for c in nrm]
@@ -168,7 +171,46 @@ def geometry(jd_ut):
     # being a width once the shadow is smeared along the horizon anyway.
     width = 2*abs(rcone)*REQ / max(cosinc, 0.15)
     diam  = 2*abs(rcone)*REQ
-    return width, ('A' if rcone > 0 else 'T'), diam
+    return width, ('T' if rcone > 0 else 'A'), diam
+
+def penumbra(jd):
+    """Where the penumbra falls, in Earth-fixed coordinates.
+
+    Returns ((u_lon, u_lat), (p_lon, p_lat), gamma, L1):
+
+        u      unit vector along the shadow axis, pointing away from the Sun, so
+               the sunlit hemisphere is where p.u < 0
+        p      direction of the axis's closest approach to Earth's centre, which
+               is perpendicular to u
+        gamma  that closest-approach distance in Earth radii
+        L1     penumbral cone radius on the fundamental plane, also in Earth radii
+
+    All of it is defined whether or not the axis actually strikes Earth, which is
+    the point: it lets a partial eclipse draw the region that sees it. Earth is
+    treated as a sphere here — the penumbra is thousands of kilometres across, so
+    the 21 km of polar flattening is not worth carrying.
+    """
+    d = ephem.Date(jd - 2415020.0)
+    _sun.compute(d); _moon.compute(d)
+    S = vec(float(_sun.ra), float(_sun.dec), _sun.earth_distance)
+    M = vec(float(_moon.ra), float(_moon.dec), _moon.earth_distance)
+    u = [M[i]-S[i] for i in range(3)]
+    dsm = sqrt(sum(c*c for c in u)); u = [c/dsm for c in u]
+    t0 = -sum(M[i]*u[i] for i in range(3))       # step to the perpendicular foot
+    P0 = [M[i] + t0*u[i] for i in range(3)]
+    gamma = sqrt(sum(c*c for c in P0))
+    L1 = RMOON + abs(t0)*(RSUN + RMOON)/dsm      # internal tangents: cone diverges
+    _obs.date = d
+    gast = float(_obs.sidereal_time())
+
+    def fixed(v):
+        lon = degrees(atan2(v[1], v[0]) - gast)
+        while lon > 180: lon -= 360
+        while lon < -180: lon += 360
+        return lon, degrees(atan2(v[2], sqrt(v[0]**2 + v[1]**2)))
+
+    return fixed(u), fixed(P0), gamma, L1
+
 
 def ground_speed(jd_ut, dt=30.0/86400):
     p1, p2 = axis_hit(jd_ut - dt), axis_hit(jd_ut + dt)
@@ -204,7 +246,7 @@ def build(jde_td, year, npts=15):
         if hits(m): a = m
         else: b = m
     end = a
-    pts, wpts, dpts = [], [], []
+    pts, wpts, dpts, tpts = [], [], [], []
     for i in range(npts):
         j = start + (end-start)*i/(npts-1)
         p = axis_hit(j)
@@ -216,6 +258,8 @@ def build(jde_td, year, npts=15):
         wpts.append(g[0] if g else (wpts[-1] if wpts else 0.0))
         spj = ground_speed(j)
         dpts.append(g[2]/spj if (g and spj and spj > 0) else 0.0)
+        # annular or total *at this point* — a hybrid switches partway along
+        tpts.append(1 if (g and g[1] == 'A') else 0)
     # greatest eclipse: sample for max cone-axis proximity to geocentre (use widest ground track)
     best, bjd = None, None
     for i in range(41):
@@ -228,7 +272,7 @@ def build(jde_td, year, npts=15):
     g = geometry(gj)
     sp = ground_speed(gj)
     dur = (g[2]/sp) if (g and sp and sp > 0) else None
-    return dict(pts=pts, wpts=wpts, dpts=dpts, start=start, end=end, gj=gj,
+    return dict(pts=pts, wpts=wpts, dpts=dpts, tpts=tpts, start=start, end=end, gj=gj,
                 width=(g[0] if g else None), dur=dur)
 
 

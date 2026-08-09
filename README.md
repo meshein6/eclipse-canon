@@ -3,9 +3,15 @@
 An interactive canon of every solar eclipse from 2000 BCE to 3000 CE — 11,898 of them —
 plus a working model of the saros cycle that produces them.
 
-Everything is computed from first principles. No eclipse catalogue is downloaded or
-scraped; the only inputs are lunar/solar theory and a land raster. The whole thing
-builds into a single self-contained HTML file with no runtime dependencies.
+Every eclipse quantity is computed from first principles. No eclipse catalogue is
+downloaded or scraped — dates, types, gamma, saros and inex numbers, ground tracks,
+path widths and durations all come out of lunar/solar theory plus a land raster.
+
+Geography is the exception, and only geography: country and province borders come
+from Natural Earth and populated places from GeoNames, purely as reference overlays
+so a zoomed-in globe has recognisable landmarks. Nothing about the eclipses depends
+on them. The whole thing still builds into a single self-contained HTML file that
+makes no network requests at run time.
 
 **[Live demo](https://meshein6.github.io/eclipse-canon/)**
 
@@ -27,9 +33,13 @@ On a wide screen the selected eclipse opens beside the canon; the canon returns 
 width when nothing is selected.
 
 **Eclipse viewer** — the selected eclipse on an orthographic globe, spinnable by drag and
-zoomable to about 30×. It shows the central path, the northern and southern limits of the
-umbral path as dotted lines, the umbra itself at whatever moment the time slider is set
-to, the day/night terminator with a twilight gradient, and the sub-solar point. Run the
+zoomable to 120×. It shows the central path, the northern and southern limits of the
+umbral path as dotted lines, a finer dotted line around the whole area seeing a partial
+at that moment, the umbra itself at whatever the time slider says, the day/night
+terminator with a twilight gradient, and the sub-solar point. The central line is
+coloured by the local type, so a **hybrid** shows plainly where it stops being annular
+and turns total and back again. Partial eclipses, which have no track at all because the
+shadow axis misses Earth, still draw their partial-viewing zone at greatest eclipse. Run the
 slider (or hit play) and the shadow crosses while the terminator and the sun-overhead
 point move with it. Play runs the whole crossing in about 30 seconds, roughly 390×
 real time, and the length of the central phase under the umbra is shown live — it
@@ -101,10 +111,14 @@ Structural checks: inex series 30 steps 2000 Feb 5 → 2029 Jan 14 → 2057 Dec 
 - Near the sunrise and sunset ends of a track the shadow axis grazes the surface and the
   computed width diverges, so the incidence cosine is floored at 0.15. Widths within a few
   hundred kilometres of either end are indicative only.
-- Coastlines are 0.1° (about 11 km) and there is **no country-border data** anywhere in
-  the project — the only geographic input is a land/sea raster. City pins are a hardcoded
-  list of 97 places in `src/cities.py`, the one table here that is not computed. Use all of
-  it for orientation, not to judge whether a path clips a particular town.
+- Coastlines are 0.1° (about 11 km), country lines are simplified to 0.02° and province
+  lines to 0.05°, so at high zoom the geography is coarser than the eclipse path drawn
+  over it. Use it for orientation, not to judge whether a path clips a particular town.
+- The partial-eclipse zone is the penumbral cylinder cut against a **spherical** Earth
+  at one instant, so it moves as you run the clock rather than enclosing the whole
+  event. The shadow axis is taken as pointing directly away from the Sun, which is
+  right to about 0.15° during an eclipse. Checked against published gamma: the zone's
+  axis distance at greatest eclipse comes out 0.145 for 2027 Aug 2 against 0.1421.
 - "Duration" means the central phase: totality for total eclipses, annularity for annular
   ones.
 
@@ -112,18 +126,22 @@ Structural checks: inex series 30 steps 2000 Feb 5 → 2029 Jan 14 → 2057 Dec 
 
 ```bash
 pip install -r requirements.txt
-python src/build.py            # full canon, about 2 minutes
-python src/build.py --quick    # 1800-2200 only, about 25 seconds
+python src/mapdata.py --fetch  # borders and places, ~11 MB, cached in data/
+python src/build.py            # full canon, about 20 seconds
+python src/build.py --quick    # 1800-2200 only, faster still
 ```
+
+`build.py` fetches the map data itself on first run if `data/` is empty, so the
+explicit fetch is only there if you would rather do it deliberately.
 
 Writes `index.html` at the repo root. Open it directly — no server needed.
 
 ```
 src/
   eclipses.py    Meeus ch.49/54; dates, type, gamma, saros, inex
-  geometry.py    shadow axis, ground track, per-point width, duration, delta-T
+  geometry.py    shadow axis, ground track, per-point width/duration/type, penumbra, delta-T
   coastlines.py  land raster to simplified polylines
-  cities.py      hardcoded pin list — the only uncomputed data here
+  mapdata.py     downloads and simplifies borders and populated places
   encode.py      base64-style packing
   template.py    the single-page app
   build.py       orchestrates the above
@@ -142,6 +160,10 @@ Settings → Pages → deploy from `main`, folder `/ (root)`. `index.html` is at
 so no workflow is needed.
 
 ## Sources
+
+Country and province borders from [Natural Earth](https://www.naturalearthdata.com/)
+(public domain). Populated places from [GeoNames](https://www.geonames.org/), licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 Jean Meeus, *Astronomical Algorithms* (2nd ed.) for the lunation and eclipse machinery.
 Fred Espenak's catalogues and the EclipseWise saros panoramas for the published values

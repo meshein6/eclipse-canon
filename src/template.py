@@ -47,6 +47,7 @@ canvas#cv{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
 .rotext{flex:1;display:flex;gap:3px 18px;align-items:baseline;flex-wrap:wrap;min-width:0}
 .zbtns{display:flex;gap:4px;align-items:center;flex:none}
 .zbtns button.b{padding:4px 9px;font-size:11px;line-height:1}
+button.b.arw{padding:4px 8px;font-size:14px;line-height:1;flex:none}
 .lbl{color:var(--dim);font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-right:5px}
 .date{font-family:"Newsreader",serif;font-style:italic;color:var(--corona)}
 .hint{color:var(--dim);font-size:10px}
@@ -139,10 +140,15 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
     </div>
     <div id="detail"><div class="inner">
       <div class="dtools">
+        <button class="b arw" id="expand" aria-pressed="false" title="Expand to fill the pane">&#10530;</button>
         <div class="seg" role="group" aria-label="Projection">
           <button id="vGlobe" aria-pressed="true">Globe</button><button id="vFlat" aria-pressed="false">Flat</button>
         </div>
-        <button class="b" id="expand" aria-pressed="false">Expand</button>
+        <div class="zbtns">
+          <button class="b" id="gOut" aria-label="Zoom out">&minus;</button>
+          <button class="b" id="gIn" aria-label="Zoom in">+</button>
+          <button class="b" id="gRst" aria-label="Centre on the eclipse">Fit</button>
+        </div>
         <div class="spacer"></div>
         <span class="hint" id="gHint">drag to spin &middot; scroll to zoom</span>
       </div>
@@ -155,6 +161,12 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <canvas id="map"></canvas>
       <div class="blk"><div class="grid2" id="pStats"></div></div>
       <div class="blk"><div class="note" id="pNote"></div></div>
+      <div class="blk"><div class="note" style="font-size:9.5px;opacity:.75">
+        Eclipse geometry computed from lunar/solar theory. Borders from Natural Earth
+        (public domain); populated places from
+        <a href="https://www.geonames.org/" style="color:var(--bronze)">GeoNames</a>,
+        <a href="https://creativecommons.org/licenses/by/4.0/" style="color:var(--bronze)">CC&nbsp;BY&nbsp;4.0</a>.
+      </div></div>
     </div></div>
   </section>
   <section class="pane" id="paneMach">
@@ -195,13 +207,13 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
   </section>
 </main>
 <div class="foot">
-  <button class="b" id="prevT" aria-label="Previous eclipse in time">&#9664;<span class="lb">time</span></button>
-  <button class="b" id="prev" aria-label="Previous in this saros series">&#9664;<span class="lb">saros</span></button>
+  <button class="b" id="prevT" aria-label="Previous eclipse chronologically">&#9664;<span class="lb">Prev chronological</span></button>
+  <button class="b" id="prev" aria-label="Previous in this saros series">&#9664;<span class="lb">Prev in saros</span></button>
   <div id="stepInfo"><span class="d">Select an eclipse</span><span class="hint" id="stepSub">tap a point on the canon</span></div>
   <button class="b" id="play" aria-label="Play through this saros series">&#9654;&#9654;</button>
   <button class="b" id="clr" aria-label="Clear selection">Clear</button>
-  <button class="b" id="next" aria-label="Next in this saros series"><span class="lb">saros</span>&#9654;</button>
-  <button class="b" id="nextT" aria-label="Next eclipse in time"><span class="lb">time</span>&#9654;</button>
+  <button class="b" id="next" aria-label="Next in this saros series"><span class="lb">Next in saros</span>&#9654;</button>
+  <button class="b" id="nextT" aria-label="Next eclipse chronologically"><span class="lb">Next chronological</span>&#9654;</button>
 </div>
 <script>
 const AB="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -214,25 +226,35 @@ const gL3=(s,i,lo,hi)=>lo+g3(s,i)/262143*(hi-lo);
 const META="__META__",PIDX="__PIDX__",PDAT="__PDAT__";
 const TYPES=["Total","Annular","Hybrid","Partial"],COL=["#f4f1e6","#e8a33d","#d76b52","#43536b"];
 const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const CITIES=__CITIES__;
-const LAND="__COAST__".split("~").map(s=>{const o=[];
+const poly=t=>t.split("~").map(s=>{const o=[];
   for(let i=0;i<s.length;i+=4)o.push([gL(s,i,-180,180),gL(s,i+2,-90,90)]);return o;});
+const LAND=poly("__COAST__"),BORD0=poly("__ADMIN0__"),BORD1=poly("__ADMIN1__");
+/* populated places, sorted biggest first so the draw loop can stop early */
+const PLC=(()=>{const d="__PLACES__",nm="__PNAMES__".split("~"),o=[];
+  for(let i=0,j=0;i+7<=d.length;i+=7,j++)
+    o.push([nm[j],gL3(d,i,-180,180),gL3(d,i+3,-90,90),IX[d[i+6]]]);
+  return o;})();
 const E=[];
-for(let i=0,n=0;i<META.length;i+=15,n++){
+for(let i=0,n=0;i<META.length;i+=31,n++){
   const c=g4(META,i),d=c%32,m=((c-d)/32)%12+1,y=Math.floor(c/384)-2000;
   const S=g2(META,i+4)-20,I=g2(META,i+9)-10;
+  const L1=gL(META,i+29,0.4,0.7);
   E.push({i:n,y:y+((m-1)*30.6+d)/365.25,ymd:[y,m,d],S:S,I:I,t:IX[META[i+6]],
     g:gL(META,i+7,-1.6,1.6),w:g2(META,i+11),dur:g2(META,i+13),
-    k:223*(I-271)+358*S+44,cell:0,p:null});
+    k:223*(I-271)+358*S+44,cell:0,p:null,
+    pen:L1>0.401?{u:[gL3(META,i+15,-180,180),gL3(META,i+18,-90,90)],
+      c:[gL3(META,i+21,-180,180),gL3(META,i+24,-90,90)],
+      g:gL(META,i+27,0,2),L1:L1}:null});
 }
 const MAXDUR=Math.max(...E.map(e=>e.dur));
 for(const e of E)e.cell=((e.k%223)+223)%223;
 for(let i=0;i<PIDX.length;i+=4){
-  const at=g4(PIDX,i),b=PDAT.substr(i/4*138,138),pts=[],ws=[],ds=[];
+  const at=g4(PIDX,i),b=PDAT.substr(i/4*151,151),pts=[],ws=[],ds=[],ts=[];
   for(let q=0;q<78;q+=6)pts.push([gL3(b,q,-180,180),gL3(b,q+3,-90,90)]);
   for(let q=86;q<112;q+=2)ws.push(g2(b,q));
   for(let q=112;q<138;q+=2)ds.push(g2(b,q));
-  E[at].p={pts:pts,ut:g2(b,78),w:g2(b,80),dur:g2(b,82),span:g2(b,84),ws:ws,ds:ds};
+  for(let q=138;q<151;q++)ts.push(IX[b[q]]);
+  E[at].p={pts:pts,ut:g2(b,78),w:g2(b,80),dur:g2(b,82),span:g2(b,84),ws:ws,ds:ds,ts:ts};
 }
 const BY={saros:new Map(),inex:new Map()};
 for(const e of E){for(const[k,v]of[["saros",e.S],["inex",e.I]]){
@@ -436,6 +458,7 @@ function drawMap(e){
 const globe=document.getElementById("globe"),gb=globe.getContext("2d");
 const globeBox=document.getElementById("globeBox");
 const RAD=Math.PI/180;
+const GZMAX=120;
 let gLon=0,gLat=20,gZoom=1,detView="globe",tFrac=.5,tTimer=null,gSize=0;
 const llv=(lon,lat)=>{const c=Math.cos(lat*RAD);
   return[c*Math.cos(lon*RAD),c*Math.sin(lon*RAD),Math.sin(lat*RAD)];};
@@ -459,12 +482,35 @@ function pj(lon,lat,k){const p=llv(lon,lat);
   return{x:k.cx+k.R*(p[0]*k.e[0]+p[1]*k.e[1]+p[2]*k.e[2]),
          y:k.cy-k.R*(p[0]*k.n[0]+p[1]*k.n[1]+p[2]*k.n[2]),
          v:p[0]*k.c[0]+p[1]*k.c[1]+p[2]*k.c[2]};}
-/* polyline with the far side of the sphere dropped */
+/* polyline with the far side of the sphere dropped; a null entry lifts the pen */
 function arc(pts,k,cl){gb.beginPath();let up=false;
-  for(const q of pts){const s=pj(q[0],q[1],k);
+  for(const q of pts){
+    if(!q){up=false;continue;}
+    const s=pj(q[0],q[1],k);
     if(s.v<=0){up=false;continue;}
     up?gb.lineTo(s.x,s.y):gb.moveTo(s.x,s.y);up=true;}
   gb.strokeStyle=cl;gb.stroke();}
+/* Outline of the region that sees any of the eclipse. The penumbra is a cylinder
+   of radius L1 about the shadow axis; where that cylinder cuts the globe on the
+   sunward side is the edge of the partial-eclipse zone. Points where the cylinder
+   misses the sphere come back null, so the curve simply stops there. */
+function penCurve(u,P,L1,n){
+  let a=[P[0],P[1],P[2]];
+  let an=Math.hypot(a[0],a[1],a[2]);
+  if(an<1e-6){a=Math.abs(u[2])<.9?[-u[1],u[0],0]:[0,-u[2],u[1]];
+    an=Math.hypot(a[0],a[1],a[2]);}
+  a=[a[0]/an,a[1]/an,a[2]/an];
+  const b=[u[1]*a[2]-u[2]*a[1],u[2]*a[0]-u[0]*a[2],u[0]*a[1]-u[1]*a[0]],out=[];
+  for(let i=0;i<=n;i++){const th=i/n*6.283185307,
+    ca=Math.cos(th)*L1,sb=Math.sin(th)*L1;
+    const q=[P[0]+ca*a[0]+sb*b[0],P[1]+ca*a[1]+sb*b[1],P[2]+ca*a[2]+sb*b[2]];
+    const q2=q[0]*q[0]+q[1]*q[1]+q[2]*q[2];
+    if(q2>1){out.push(null);continue;}
+    const s=-Math.sqrt(1-q2);
+    const p=[q[0]+s*u[0],q[1]+s*u[1],q[2]+s*u[2]];
+    out.push([Math.atan2(p[1],p[0])/RAD,
+      Math.asin(Math.max(-1,Math.min(1,p[2])))/RAD]);}
+  return out;}
 /* night is shaded per pixel: cheap, and gives a real twilight gradient */
 function shade(k,w,h,sub){const s=llv(sub.lon,sub.lat),sc=2;
   const ow=Math.max(2,Math.ceil(w/sc)),oh=Math.max(2,Math.ceil(h/sc));
@@ -501,6 +547,27 @@ function trackAt(p,f){prep(p);const x=fIdx(p,f);
 function widthAt(p,f){if(!p.ws)return p.w;
   const v=spl(p.ws,fIdx(p,f));
   return Math.max(1,Math.min(v,Math.max(600,p.w*6)));}
+/* The partial-eclipse zone at the moment the clock is showing.
+
+   The shadow axis is the Sun->Moon line, which during an eclipse is within about
+   0.15 degrees of pointing straight away from the Sun, so -sun is a good enough
+   axis direction and comes free from the sub-solar point. For an eclipse with a
+   track the axis passes through the umbra, which pins the perpendicular foot and
+   guarantees the umbra sits inside the zone. Partials have no track, so they fall
+   back to the stored geometry at greatest eclipse, which is when the zone is
+   largest. */
+function penNow(e,sub){
+  if(!e||!e.pen)return null;
+  if(e.p){
+    const u=[-llv(sub.lon,sub.lat)[0],-llv(sub.lon,sub.lat)[1],-llv(sub.lon,sub.lat)[2]];
+    const c=trackAt(e.p,tFrac),v=llv(c[0],c[1]);
+    const d=v[0]*u[0]+v[1]*u[1]+v[2]*u[2];
+    return{u:u,P:[v[0]-d*u[0],v[1]-d*u[1],v[2]-d*u[2]],L1:e.pen.L1};}
+  const u=llv(e.pen.u[0],e.pen.u[1]),a=llv(e.pen.c[0],e.pen.c[1]);
+  return{u:u,P:[a[0]*e.pen.g,a[1]*e.pen.g,a[2]*e.pen.g],L1:e.pen.L1};}
+/* 1 where this stretch of the track is annular, 0 where it is total */
+function typeAt(p,f){if(!p.ts)return 0;
+  return p.ts[Math.max(0,Math.min(p.ts.length-1,Math.round(f*(p.ts.length-1))))];}
 /* central-phase length where the umbra is standing right now */
 function durAt(p,f){if(!p.ds)return p.dur;
   return Math.max(0,Math.min(spl(p.ds,fIdx(p,f)),p.dur*3));}
@@ -551,45 +618,79 @@ function drawGlobe(){
     for(let la=-90;la<=90;la+=gs)p.push([lon,la]);arc(p,k,"#0f1e2c");}
   for(let la=-90+gr;la<90;la+=gr){const p=[];
     for(let lo=-180;lo<=180;lo+=gs)p.push([lo,la]);arc(p,k,"#0f1e2c");}
+  /* borders fade in so a whole-Earth view stays readable */
+  const fade=(z0,z1)=>Math.max(0,Math.min(1,(gZoom-z0)/(z1-z0)));
+  const aC=fade(1.4,2.4),aP=fade(3,5);
+  if(aC>.02){gb.globalAlpha=aC*.85;gb.lineWidth=.8;
+    for(const b of BORD0)arc(b,k,"#4a5f7a");}
+  if(aP>.02){gb.globalAlpha=aP*.6;gb.lineWidth=.7;
+    for(const b of BORD1)arc(b,k,"#38495e");}
+  gb.globalAlpha=1;
   gb.lineWidth=.9;
-  for(const poly of LAND)arc(poly.concat([poly[0]]),k,"#2f4a63");
+  for(const p of LAND)arc(p.concat([p[0]]),k,"#2f4a63");
   gb.restore();
   gb.save();gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.clip();
   const jd=e?jdOf(e.ymd[0],e.ymd[1],e.ymd[2],tMin(e)):2451545.0;
   const sub=subsolar(jd);
   gb.drawImage(shade(k,w,h,sub),0,0,w,h);
   /* city pins, once you are zoomed in far enough for them to mean anything */
-  if(gZoom>=1.8){
+  /* Populated places, each population tier fading in over a zoom range. PLC is
+     sorted biggest first, so once a tier is invisible everything after it is too. */
+  if(gZoom>=1.5){
     gb.font='9px "IBM Plex Mono",monospace';gb.textAlign="left";gb.textBaseline="middle";
-    /* each tier ramps in over a zoom octave rather than popping on */
-    const fade=(z0,z1)=>Math.max(0,Math.min(1,(gZoom-z0)/(z1-z0)));
-    const al=[0,fade(1.8,2.6),fade(3.2,4.6),fade(6,8.5)];
-    for(const c of CITIES){const a=al[c[3]];if(a<=.02)continue;
+    const al=[fade(1.5,2.2),fade(2.4,3.4),fade(4,5.5),fade(7,9),fade(11,14)];
+    const nmFrom=[1.9,2.8,4.6,8,12];
+    /* Labels are placed greedily into a coarse grid and dropped when their slot is
+       taken, otherwise a dense region turns into an unreadable smear. Biggest
+       places come first, so they win the contested slots. */
+    const occ=new Set();let labels=0;
+    for(const c of PLC){const t=c[3],a=al[t];
+      if(a<=.02)break;
       const s=pj(c[1],c[2],k);if(s.v<=0.02)continue;
       if(s.x<-20||s.x>w+20||s.y<-20||s.y>h+20)continue;
       gb.globalAlpha=a;
-      gb.fillStyle="#b58b4c";gb.beginPath();gb.arc(s.x,s.y,1.9,0,6.2832);gb.fill();
-      if(gZoom>=2.6){gb.fillStyle="#aebac9";gb.fillText(c[0],s.x+4.5,s.y);}}
+      gb.fillStyle="#b58b4c";gb.beginPath();gb.arc(s.x,s.y,t<=1?2.1:1.6,0,6.2832);gb.fill();
+      if(gZoom<nmFrom[t]||labels>=220)continue;
+      const row=(s.y/13)|0,c0=(s.x/58)|0,c1=((s.x+c[0].length*5.4)/58)|0;
+      let free=true;
+      for(let cc=c0;cc<=c1;cc++)if(occ.has(row+":"+cc)){free=false;break;}
+      if(!free)continue;
+      for(let cc=c0;cc<=c1;cc++)occ.add(row+":"+cc);
+      gb.strokeStyle="rgba(4,7,12,.85)";gb.lineWidth=2.6;
+      gb.strokeText(c[0],s.x+4.5,s.y);
+      gb.fillStyle="#c3cedb";gb.fillText(c[0],s.x+4.5,s.y);labels++;}
     gb.globalAlpha=1;}
   const ss=pj(sub.lon,sub.lat,k);
   if(ss.v>0){gb.fillStyle="rgba(244,241,230,.9)";gb.beginPath();gb.arc(ss.x,ss.y,3,0,6.2832);gb.fill();
     gb.strokeStyle="rgba(244,241,230,.35)";gb.lineWidth=1;gb.beginPath();gb.arc(ss.x,ss.y,7,0,6.2832);gb.stroke();
     gb.fillStyle="rgba(244,241,230,.6)";gb.font='8.5px "IBM Plex Mono",monospace';
     gb.textAlign="center";gb.textBaseline="top";gb.fillText("sun overhead",ss.x,ss.y+10);}
+  /* the whole area that sees a partial — the only geometry a partial eclipse has */
+  const pn=penNow(e,sub);
+  if(pn){gb.setLineDash([1.5,3.5]);gb.lineWidth=1.1;gb.globalAlpha=.9;
+    arc(penCurve(pn.u,pn.P,pn.L1,360),k,"#93a6bd");
+    gb.setLineDash([]);gb.globalAlpha=1;}
   if(e&&e.p){
     const ns=Math.round(Math.max(140,Math.min(420,90*Math.sqrt(gZoom))));
     const [eL_,eR_]=edges(e.p,ns);
     gb.setLineDash([2,3]);gb.lineWidth=1;gb.globalAlpha=.75;
     arc(eL_,k,COL[e.t]);arc(eR_,k,COL[e.t]);
     gb.setLineDash([]);gb.globalAlpha=1;
+    /* coloured by the local type, so a hybrid shows where it turns */
     gb.lineWidth=2;gb.lineCap="round";
-    arc(smooth(e.p,ns),k,COL[e.t]);
+    let run=[],cur=-1;
+    for(let i=0;i<=ns;i++){const f=i/ns,ty=typeAt(e.p,f),pt=trackAt(e.p,f);
+      if(ty!==cur){if(run.length>1)arc(run,k,COL[cur?1:0]);
+        run=run.length?[run[run.length-1]]:[];cur=ty;}
+      run.push(pt);}
+    if(run.length>1)arc(run,k,COL[cur?1:0]);
     const u=trackAt(e.p,tFrac),us=pj(u[0],u[1],k);
     if(us.v>0){
       const rr=Math.max(2.5,k.R*(widthAt(e.p,tFrac)/2)/6371);
+      const uc=COL[typeAt(e.p,tFrac)?1:0];
       gb.fillStyle="rgba(7,10,16,.85)";gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.fill();
-      gb.strokeStyle=COL[e.t];gb.lineWidth=1.6;gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.stroke();
-      gb.strokeStyle=COL[e.t];gb.globalAlpha=.5;gb.lineWidth=1;
+      gb.strokeStyle=uc;gb.lineWidth=1.6;gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.stroke();
+      gb.strokeStyle=uc;gb.globalAlpha=.5;gb.lineWidth=1;
       gb.beginPath();gb.arc(us.x,us.y,rr+6,0,6.2832);gb.stroke();gb.globalAlpha=1;
       const dd=Math.round(durAt(e.p,tFrac));
       if(dd>0){gb.fillStyle=COL[e.t];gb.font='500 10px "IBM Plex Mono",monospace';
@@ -602,8 +703,12 @@ function drawGlobe(){
   gb.textAlign="left";gb.textBaseline="top";
   gb.fillText("sub-solar "+sub.lat.toFixed(1)+"° "+sub.lon.toFixed(1)+"°",8,8);
   gb.fillText("×"+gZoom.toFixed(1)+(gZoom<2.2?"  — zoom in for cities":""),8,21);
-  if(e&&!e.p){gb.textAlign="center";gb.fillStyle="#5d6b80";
-    gb.fillText(e.t===3?"partial — the axis misses Earth":"track not computed before 1000 CE",w/2,h-16);}
+  if(e&&!e.p){gb.textAlign="center";gb.fillStyle="#7d8ea6";
+    gb.fillText(e.t===3
+      ?"partial only — the axis misses Earth; dotted line is the zone at greatest eclipse"
+      :"track not computed before 1000 CE — dotted line is the zone at greatest eclipse",w/2,h-16);}
+  else if(e){gb.textAlign="center";gb.fillStyle="#6b7a90";
+    gb.fillText("dotted outer line: everyone seeing a partial at this moment",w/2,h-16);}
 }
 const TPLAY=30000;   /* one crossing takes half a minute, whatever its length */
 function setTLab(){const e=sel;
@@ -636,7 +741,8 @@ function setDetView(v){detView=v;
 vGlobe.onclick=()=>setDetView("globe");vFlat.onclick=()=>setDetView("flat");
 expand.onclick=()=>{const on=detail.classList.toggle("expanded");
   expand.setAttribute("aria-pressed",String(on));expand.classList.toggle("on",on);
-  expand.textContent=on?"Collapse":"Expand";
+  expand.innerHTML=on?"&#10529;":"&#10530;";
+  expand.title=on?"Collapse back to the side panel":"Expand to fill the pane";
   requestAnimationFrame(()=>{if(detView==="globe")drawGlobe();else drawMap(sel);resize();});};
 /* spin + zoom */
 let gDrag=null;
@@ -649,9 +755,14 @@ globe.addEventListener("pointermove",ev=>{if(!gDrag)return;
 ["pointerup","pointercancel"].forEach(t=>globe.addEventListener(t,()=>{
   gDrag=null;globe.style.cursor="grab";}));
 globe.addEventListener("wheel",ev=>{ev.preventDefault();
-  gZoom=Math.max(.7,Math.min(30,gZoom*(ev.deltaY>0?.9:1.111)));drawGlobe();},{passive:false});
+  gZoom=Math.max(.7,Math.min(GZMAX,gZoom*(ev.deltaY>0?.88:1.136)));drawGlobe();},{passive:false});
 globe.addEventListener("dblclick",()=>{gZoom=1;faceEclipse();drawGlobe();});
-function faceEclipse(){if(sel&&sel.p){const c=trackAt(sel.p,.5);gLon=c[0];gLat=c[1];}}
+const gZoomBy=f=>{gZoom=Math.max(.7,Math.min(GZMAX,gZoom*f));drawGlobe();};
+gIn.onclick=()=>gZoomBy(1.6);gOut.onclick=()=>gZoomBy(1/1.6);
+gRst.onclick=()=>{gZoom=1;faceEclipse();drawGlobe();};
+function faceEclipse(){if(!sel)return;
+  if(sel.p){const c=trackAt(sel.p,.5);gLon=c[0];gLat=c[1];}
+  else if(sel.pen){gLon=sel.pen.c[0];gLat=sel.pen.c[1];}}
 /* the panel animates open, so its final size is only known once it settles */
 detail.addEventListener("transitionend",ev=>{
   if(ev.propertyName==="width"||ev.propertyName==="height"){
@@ -799,7 +910,8 @@ function stepTime(d){const n=nextVisible(navBase(d),d);
   if(n){stop();select(n,sel?detail.classList.contains("open"):true);}}
 function deselect(){stop();stopT();sel=null;hover=null;
   detail.classList.remove("open");detail.classList.remove("expanded");
-  expand.setAttribute("aria-pressed","false");expand.classList.remove("on");expand.textContent="Expand";
+  expand.setAttribute("aria-pressed","false");expand.classList.remove("on");
+  expand.innerHTML="&#10530;";expand.title="Expand to fill the pane";
   stepInfo.innerHTML='<span class="d">Select an eclipse</span><span class="hint">tap a point on the canon</span>';
   tSlide.disabled=true;tPlay.disabled=true;tLab.textContent="--:-- UT";tDur.textContent="";
   syncNav();refresh();}

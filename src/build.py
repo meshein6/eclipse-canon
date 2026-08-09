@@ -16,10 +16,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ephem
 from eclipses import catalogue
-from geometry import build as build_track, deltaT
-import cities
+from geometry import build as build_track, deltaT, penumbra
 import coastlines
 import encode
+import mapdata
 from template import HTML
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,6 +61,7 @@ def main():
             r['pts'] = p['pts']
             r['wp'] = [int(round(min(w, 4095))) for w in p['wpts']]
             r['dp'] = [int(round(min(d, 4095))) for d in p['dpts']]
+            r['tp'] = p['tpts']
             r['w'] = int(round(p['width']))
             r['dur'] = int(round(p['dur']))
             r['ut'] = int(round(t[3] * 60 + t[4] + t[5] / 60)) % 1440
@@ -69,10 +70,31 @@ def main():
             n_track += 1
     print(f'  {len(durs)} durations, {n_track} drawn tracks')
 
+    # Every eclipse gets this, partials included: it is what lets a partial draw
+    # the region that actually saw it, instead of nothing at all.
+    print('penumbral footprints ...')
+    n_pen = 0
+    for r in rows:
+        try:
+            u, p0, g, l1 = penumbra(r['jde'] - deltaT(r['y'])/86400.0)
+            r['pen'] = (u[0], u[1], p0[0], p0[1], g, l1)
+            n_pen += 1
+        except Exception:
+            r['pen'] = None
+    print(f'  {n_pen} footprints')
+
     print('tracing coastlines ...')
     # 0.1-degree cells: fine enough that the globe still reads when zoomed in
     coast = coastlines.polylines(step=12, tolerance=0.7, min_area=10)
     print(f'  {len(coast)} polygons, {sum(len(c) for c in coast)} points')
+
+    print('borders and populated places ...')
+    mapdata.fetch()
+    a0, a1 = mapdata.borders()
+    plc = mapdata.places(min_pop=10000)
+    pdat_places, pnames = encode.pack_places(plc)
+    print(f'  {sum(len(x) for x in a0)} country pts, {sum(len(x) for x in a1)} '
+          f'province pts, {len(plc)} places')
 
     meta = encode.pack_meta(rows, durs)
     pidx, pdat = encode.pack_paths(rows)
@@ -80,7 +102,10 @@ def main():
                 .replace('__PIDX__', pidx)
                 .replace('__PDAT__', pdat)
                 .replace('__COAST__', encode.pack_coast(coast))
-                .replace('__CITIES__', cities.pack()))
+                .replace('__ADMIN0__', encode.pack_coast(a0))
+                .replace('__ADMIN1__', encode.pack_coast(a1))
+                .replace('__PLACES__', pdat_places)
+                .replace('__PNAMES__', pnames))
     with open(args.out, 'w') as f:
         f.write(html)
 
