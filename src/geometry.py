@@ -99,7 +99,16 @@ RMOON = 1737.4 / REQ
 
 def deltaT(y):
     """Espenak & Meeus polynomial expressions, seconds."""
+    if y < -500:
+        u = (y - 1820) / 100.0
+        return -20 + 32*u*u
+    if y < 500:
+        u = y / 100.0
+        return (10583.6 - 1014.41*u + 33.78311*u**2 - 5.952053*u**3
+                - 0.1798452*u**4 + 0.022174192*u**5 + 0.0090316521*u**6)
     if y < 1600:
+        # each branch is fitted to its own interval; the 500-1600 polynomial
+        # runs away to weeks of error if it is used before 500
         u = (y - 1000) / 100.0
         return (1574.2 - 556.01*u + 71.23472*u**2 + 0.319781*u**3
                 - 0.8503463*u**4 - 0.005050998*u**5 + 0.0083572073*u**6)
