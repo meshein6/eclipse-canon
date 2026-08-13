@@ -61,6 +61,18 @@ em{font-style:normal;color:var(--corona)}
  border-bottom:1px solid var(--rule);background:var(--ink)}
 #globeBox{position:relative;width:100%;border-bottom:1px solid var(--rule);min-height:200px}
 #globe{display:block;width:100%;height:100%;background:#04070c;cursor:grab;touch-action:none}
+#skyBox{position:relative;width:100%;border-bottom:1px solid var(--rule);min-height:200px;display:none}
+/* the scene is drawn in WebGL underneath and the readouts in 2-D on top, which
+   keeps the text crisp and leaves the pointer handlers on one element */
+#sky3d{position:absolute;inset:0;width:100%;height:100%;background:#04070c;display:none}
+#sky{position:absolute;inset:0;width:100%;height:100%;background:#04070c;cursor:grab;touch-action:none}
+#sky.gl{background:transparent}
+.obsRow{display:none;gap:8px 12px;align-items:baseline;flex-wrap:wrap;padding:6px 10px;
+ border-bottom:1px solid var(--rule);background:var(--ink2);font-size:10.5px}
+#obsPos{color:var(--corona);font-size:11.5px;white-space:nowrap}
+/* wide enough to sit beside the buttons on a desktop, and to drop to its own
+   line rather than being squeezed into a column on a phone */
+#obsInfo{flex:1 1 270px;min-width:0;color:var(--text);display:flex;gap:2px 10px;flex-wrap:wrap}
 .tRow{display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--rule)}
 .tRow input[type=range]{flex:1;min-width:0;accent-color:var(--ring);height:16px}
 #tLab{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--corona);
@@ -99,6 +111,17 @@ button.b.on{background:#182437;color:var(--corona);border-color:#2c3d52}
 button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 .lb{font-size:9px;letter-spacing:.06em;text-transform:uppercase;margin:0 3px;opacity:.85}
 #stepInfo{flex:1;text-align:center;font-size:10.5px;line-height:1.35;min-width:0}
+/* the masthead chip: an eclipse happening right now, or the next one along */
+.chip{font:inherit;font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+ background:#111a26;border:1px solid var(--rule);color:var(--dim);border-radius:2px;
+ padding:4px 8px;cursor:pointer;transition:.15s;white-space:nowrap}
+.chip:hover{color:var(--text);border-color:var(--dim)}
+.chip.live{background:#3b1d1d;border-color:#8f3a33;color:#ffd9d2}
+.chip .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#e8574a;
+ margin-right:6px;vertical-align:middle;animation:beat 1.6s ease-in-out infinite}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.25}}
+#tLive{white-space:nowrap}
+#tLive.on{background:#3b1d1d;border-color:#8f3a33;color:#ffd9d2}
 #stepInfo .d{font-family:"Newsreader",serif;font-style:italic;font-size:14px;color:var(--corona);display:block}
 @media (max-width:520px){h1{font-size:16px}header{padding:9px 11px 6px}.bar{padding:6px 11px;gap:6px}
  .seg button{padding:6px 8px}.foot{padding:6px 9px;gap:6px}button.b{padding:6px 8px;font-size:10px}}
@@ -120,7 +143,9 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 </head>
 <body>
 <header><h1>Canon of Solar Eclipses</h1>
-<div class="sub"><b>2000&nbsp;BCE&thinsp;&ndash;&thinsp;3000&nbsp;CE</b> &middot; <b id="nEcl">-</b> eclipses</div></header>
+<div class="sub"><b>2000&nbsp;BCE&thinsp;&ndash;&thinsp;3000&nbsp;CE</b> &middot; <b id="nEcl">-</b> eclipses</div>
+<div class="spacer"></div>
+<button class="chip" id="liveChip"></button></header>
 <div class="bar">
   <div class="seg" role="group" aria-label="View">
     <button id="tCanon" aria-pressed="true">Canon</button><button id="tMach" aria-pressed="false">Saros machine</button>
@@ -154,7 +179,7 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <div class="dtools">
         <button class="b arw" id="expand" aria-pressed="false" title="Expand to fill the pane">&#10530;</button>
         <div class="seg" role="group" aria-label="Projection">
-          <button id="vGlobe" aria-pressed="true">Globe</button><button id="vFlat" aria-pressed="false">Flat</button>
+          <button id="vGlobe" aria-pressed="true">Globe</button><button id="vGround" aria-pressed="false">Ground</button><button id="vFlat" aria-pressed="false">Flat</button>
         </div>
         <div class="zbtns">
           <button class="b" id="gOut" aria-label="Zoom out">&minus;</button>
@@ -162,19 +187,32 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
           <button class="b" id="gRst" aria-label="Centre on the eclipse">Fit</button>
         </div>
         <div class="spacer"></div>
-        <span class="hint" id="gHint">drag to spin &middot; scroll to zoom</span>
+        <span class="hint" id="gHint">drag to spin &middot; tap to stand there</span>
       </div>
       <div id="globeBox"><canvas id="globe"></canvas></div>
+      <div id="skyBox"><canvas id="sky3d"></canvas><canvas id="sky"></canvas></div>
       <div class="tRow" id="tRow">
-        <button class="b" id="tPlay" aria-label="Animate the crossing">&#9654;</button>
+        <button class="b" id="tPlay" aria-label="Animate the eclipse">&#9654;</button>
+        <button class="b" id="tLive" aria-pressed="false" aria-label="Follow the real clock">&#9679; Live</button>
         <input type="range" id="tSlide" min="0" max="1000" value="500" aria-label="Time through the eclipse">
         <span id="tLab">--:-- UT</span><span id="tDur"></span>
+      </div>
+      <div class="obsRow" id="obsRow">
+        <span id="obsPos">nowhere yet</span>
+        <button class="b" id="obsSun" title="Point the view at the Sun and zoom in">&#9788; Find the Sun</button>
+        <button class="b on" id="obsTerr" aria-pressed="true" title="Fetch real elevation for this spot">&#9968; Terrain</button>
+        <button class="b" id="obsClr" title="Stop standing anywhere">Clear</button>
+        <span id="obsInfo"></span>
       </div>
       <canvas id="map"></canvas>
       <div class="blk"><div class="grid2" id="pStats"></div></div>
       <div class="blk"><div class="note" id="pNote"></div></div>
       <div class="blk"><div class="note" style="font-size:9.5px;opacity:.75">
-        Eclipse geometry computed from lunar/solar theory. Borders from Natural Earth
+        Eclipse geometry computed from lunar/solar theory. Elevation for the ground
+        view is fetched as you use it from
+        <a href="https://registry.opendata.aws/terrain-tiles/" style="color:var(--bronze)">AWS&nbsp;Terrain&nbsp;Tiles</a>
+        (Mapzen terrarium encoding); everything else in the page is offline.
+        Borders from Natural Earth
         (public domain); populated places from
         <a href="https://www.geonames.org/" style="color:var(--bronze)">GeoNames</a>,
         <a href="https://creativecommons.org/licenses/by/4.0/" style="color:var(--bronze)">CC&nbsp;BY&nbsp;4.0</a>.
@@ -250,13 +288,12 @@ const E=[];
 for(let i=0,n=0;i<META.length;i+=31,n++){
   const c=g4(META,i),d=c%32,m=((c-d)/32)%12+1,y=Math.floor(c/384)-2000;
   const S=g2(META,i+4)-20,I=g2(META,i+9)-10;
-  const L1=gL(META,i+29,0.4,0.7);
+  /* the last 16 characters of each record are the packed penumbral geometry at
+     greatest eclipse. The viewer now carries its own Sun and Moon and recomputes
+     that at whatever instant the clock is showing, so it reads past them. */
   E.push({i:n,y:y+((m-1)*30.6+d)/365.25,ymd:[y,m,d],S:S,I:I,t:IX[META[i+6]],
     g:gL(META,i+7,-1.6,1.6),w:g2(META,i+11),dur:g2(META,i+13),
-    k:223*(I-271)+358*S+44,cell:0,p:null,
-    pen:L1>0.401?{u:[gL3(META,i+15,-180,180),gL3(META,i+18,-90,90)],
-      c:[gL3(META,i+21,-180,180),gL3(META,i+24,-90,90)],
-      g:gL(META,i+27,0,2),L1:L1}:null});
+    k:223*(I-271)+358*S+44,cell:0,p:null});
 }
 const MAXDUR=Math.max(...E.map(e=>e.dur));
 for(const e of E)e.cell=((e.k%223)+223)%223;
@@ -412,6 +449,9 @@ function draw(){
 const dstr=e=>{const[y,m,d]=e.ymd;return(y<=0?(1-y)+" BCE":y)+" "+MON[m-1]+" "+String(d).padStart(2,"0");};
 const utf=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")+" UT";
 const fd=s=>Math.floor(s/60)+"m "+String(s%60).padStart(2,"0")+"s";
+/* whole eclipses run for hours, so minutes stop reading past about ninety */
+const fdl=s=>{const m=Math.round(s/60);
+  return m>=90?Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m":fd(s);};
 function setReadout(){
   const e=hover||sel;
   if(!e){const c=(view.x0+view.x1)/2,a=new Set();
@@ -479,14 +519,197 @@ function jdOf(y,m,d,mins){let Y=y,M=m;if(M<=2){Y-=1;M+=12;}
   const greg=(y>1582)||(y===1582&&(m>10||(m===10&&d>=15)));
   const B=greg?(2-Math.floor(Y/100)+Math.floor(Math.floor(Y/100)/4)):0;
   return Math.floor(365.25*(Y+4716))+Math.floor(30.6001*(M+1))+d+B-1524.5+mins/1440;}
-function subsolar(jd){const n=jd-2451545.0;
-  const L=(280.460+0.9856474*n)%360,g=(357.528+0.9856003*n)%360;
-  const lam=(L+1.915*Math.sin(g*RAD)+0.020*Math.sin(2*g*RAD))*RAD;
-  const eps=(23.439-0.0000004*n)*RAD;
-  const dec=Math.asin(Math.sin(eps)*Math.sin(lam))/RAD;
-  const ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam))/RAD;
-  const gmst=(280.46061837+360.98564736629*n)%360;
-  return{lat:dec,lon:((ra-gmst)%360+540)%360-180};}
+/* and back again, so a clock that runs past midnight still names the right day */
+function calOf(jd){const z=Math.floor(jd+0.5),f=jd+0.5-z;
+  let A=z;if(z>=2299161){const al=Math.floor((z-1867216.25)/36524.25);
+    A=z+1+al-Math.floor(al/4);}
+  const B=A+1524,C=Math.floor((B-122.1)/365.25),D=Math.floor(365.25*C),
+        E=Math.floor((B-D)/30.6001);
+  const day=B-D-Math.floor(30.6001*E),m=E<14?E-1:E-13,y=m>2?C-4716:C-4715;
+  return{y:y,m:m,d:day,mins:f*1440};}
+
+/* ---------- Sun and Moon ----------
+
+   Enough of a real ephemeris to stand on the ground and look up. Meeus,
+   Astronomical Algorithms: the solar theory of ch.25, the truncated ELP-2000/82
+   lunar series of ch.47, nutation from ch.22, and Laskar's obliquity, which is
+   the one term here that stays honest across five millennia. Everything comes
+   out as vectors in kilometres in an equatorial-of-date frame, because the
+   observer, the shadow axis and the two discs all want vectors, not angles.
+
+   Checked against pyephem at matched terrestrial time: the Moon agrees to about
+   10 arcsec over 1000-2000 CE and 25 arcsec over the rest of the canon, the Sun
+   to about 25 arcsec throughout. Both are far inside the 30-arcmin discs being
+   drawn. */
+const sinD=x=>Math.sin(x*RAD),cosD=x=>Math.cos(x*RAD);
+const clamp1=v=>Math.max(-1,Math.min(1,v));
+/* ch.47 table A: D, M, M', F, then the longitude and distance coefficients */
+const MLR=[0,0,1,0,6288774,-20905355,2,0,-1,0,1274027,-3699111,2,0,0,0,658314,-2955968,
+0,0,2,0,213618,-569925,0,1,0,0,-185116,48888,0,0,0,2,-114332,-3149,
+2,0,-2,0,58793,246158,2,-1,-1,0,57066,-152138,2,0,1,0,53322,-170733,
+2,-1,0,0,45758,-204586,0,1,-1,0,-40923,-129620,1,0,0,0,-34720,108743,
+0,1,1,0,-30383,104755,2,0,0,-2,15327,10321,0,0,1,2,-12528,0,
+0,0,1,-2,10980,79661,4,0,-1,0,10675,-34782,0,0,3,0,10034,-23210,
+4,0,-2,0,8548,-21636,2,1,-1,0,-7888,24208,2,1,0,0,-6766,30824,
+1,0,-1,0,-5163,-8379,1,1,0,0,4987,-16675,2,-1,1,0,4036,-12831,
+2,0,2,0,3994,-10445,4,0,0,0,3861,-11650,2,0,-3,0,3665,14403,
+0,1,-2,0,-2689,-7003,2,0,-1,2,-2602,0,2,-1,-2,0,2390,10056,
+1,0,1,0,-2348,6322,2,-2,0,0,2236,-9884,0,1,2,0,-2120,5751,
+0,2,0,0,-2069,0,2,-2,-1,0,2048,-4950,2,0,1,-2,-1773,4130,
+2,0,0,2,-1595,0,4,-1,-1,0,1215,-3958,0,0,2,2,-1110,0,
+3,0,-1,0,-892,3258,2,1,1,0,-810,2616,4,-1,-2,0,759,-1897,
+0,2,-1,0,-713,-2117,2,2,-1,0,-700,2354,2,1,-2,0,691,0,
+2,-1,0,-2,596,0,4,0,1,0,549,-1423,0,0,4,0,537,-1117,
+4,-1,0,0,520,-1571,1,0,-2,0,-487,-1739,2,1,0,-2,-399,0,
+0,0,2,-2,-381,-4421,1,1,1,0,351,0,3,0,-2,0,-340,0,
+4,0,-3,0,330,0,2,-1,2,0,327,0,0,2,1,0,-323,1165,
+1,1,-1,0,299,0,2,0,3,0,294,0,2,0,-1,-2,0,8752];
+/* table B: the same arguments, latitude only */
+const MBT=[0,0,0,1,5128122,0,0,1,1,280602,0,0,1,-1,277693,2,0,0,-1,173237,
+2,0,-1,1,55413,2,0,-1,-1,46271,2,0,0,1,32573,0,0,2,1,17198,
+2,0,1,-1,9266,0,0,2,-1,8822,2,-1,0,-1,8216,2,0,-2,-1,4324,
+2,0,1,1,4200,2,1,0,-1,-3359,2,-1,-1,1,2463,2,-1,0,1,2211,
+2,-1,-1,-1,2065,0,1,-1,-1,-1870,4,0,-1,-1,1828,0,1,0,1,-1794,
+0,0,0,3,-1749,0,1,-1,1,-1565,1,0,0,1,-1491,0,1,1,1,-1475,
+0,1,1,-1,-1410,0,1,0,-1,-1344,1,0,0,-1,-1335,0,0,3,1,1107,
+4,0,0,-1,1021,4,0,-1,1,833,0,0,1,-3,777,4,0,-2,1,671,
+2,0,0,-3,607,2,0,2,-1,596,2,-1,1,-1,491,2,0,-2,1,-451,
+0,0,3,-1,439,2,0,2,1,422,2,0,-3,-1,421,2,1,-1,1,-366,
+2,1,0,1,-351,4,0,0,1,331,2,-1,1,1,315,2,-2,0,-1,302,
+0,0,1,3,-283,2,1,1,-1,-229,1,1,0,-1,223,1,1,0,1,223,
+0,1,-2,-1,-220,2,1,-1,-1,-220,1,0,1,1,-185,2,-1,-2,-1,181,
+0,1,2,1,-177,4,0,-2,-1,176,4,-1,-1,-1,166,1,0,1,-1,-164,
+4,0,1,-1,132,1,0,-1,-1,-119,4,-1,0,-1,115,2,-2,0,1,107];
+/* Espenak & Meeus delta-T, seconds; the same branches as deltaT() in geometry.py */
+function deltaT(y){let t,u;
+  if(y<-500){u=(y-1820)/100;return -20+32*u*u;}
+  if(y<500){u=y/100;return 10583.6-1014.41*u+33.78311*u*u-5.952053*u*u*u
+    -0.1798452*Math.pow(u,4)+0.022174192*Math.pow(u,5)+0.0090316521*Math.pow(u,6);}
+  if(y<1600){u=(y-1000)/100;return 1574.2-556.01*u+71.23472*u*u+0.319781*u*u*u
+    -0.8503463*Math.pow(u,4)-0.005050998*Math.pow(u,5)+0.0083572073*Math.pow(u,6);}
+  if(y<1700){t=y-1600;return 120-0.9808*t-0.01532*t*t+t*t*t/7129;}
+  if(y<1800){t=y-1700;return 8.83+0.1603*t-0.0059285*t*t+0.00013336*t*t*t-Math.pow(t,4)/1174000;}
+  if(y<1860){t=y-1800;return 13.72-0.332447*t+0.0068612*t*t+0.0041116*t*t*t
+    -0.00037436*Math.pow(t,4)+0.0000121272*Math.pow(t,5)-0.0000001699*Math.pow(t,6)
+    +0.000000000875*Math.pow(t,7);}
+  if(y<1900){t=y-1860;return 7.62+0.5737*t-0.251754*t*t+0.01680668*t*t*t
+    -0.0004473624*Math.pow(t,4)+Math.pow(t,5)/233174;}
+  if(y<1920){t=y-1900;return -2.79+1.494119*t-0.0598939*t*t+0.0061966*t*t*t-0.000197*Math.pow(t,4);}
+  if(y<1941){t=y-1920;return 21.20+0.84493*t-0.076100*t*t+0.0020936*t*t*t;}
+  if(y<1961){t=y-1950;return 29.07+0.407*t-t*t/233+t*t*t/2547;}
+  if(y<1986){t=y-1975;return 45.45+1.067*t-t*t/260-t*t*t/718;}
+  if(y<2005){t=y-2000;return 63.86+0.3345*t-0.060374*t*t+0.0017275*t*t*t
+    +0.000651814*Math.pow(t,4)+0.00002373599*Math.pow(t,5);}
+  if(y<2050){t=y-2000;return 62.92+0.32217*t+0.005589*t*t;}
+  if(y<2150)return -20+32*Math.pow((y-1820)/100,2)-0.5628*(2150-y);
+  u=(y-1820)/100;return -20+32*u*u;}
+const jdYear=jd=>2000+(jd-2451545.0)/365.25;
+/* nutation in longitude and obliquity (arcsec), and the true obliquity */
+function nut(T){const O=125.04452-1934.136261*T,L=280.4665+36000.7698*T,
+        Lm=218.3165+481267.8813*T,u=T/100;
+  const dp=-17.20*sinD(O)-1.32*sinD(2*L)-0.23*sinD(2*Lm)+0.21*sinD(2*O);
+  const de=9.20*cosD(O)+0.57*cosD(2*L)+0.10*cosD(2*Lm)-0.09*cosD(2*O);
+  /* Laskar: the textbook cubic drifts by minutes of arc at the ends of this canon */
+  const e0=23.43929111-(4680.93*u+1.55*u*u-1999.25*Math.pow(u,3)+51.38*Math.pow(u,4)
+    +249.67*Math.pow(u,5)+39.05*Math.pow(u,6)-7.12*Math.pow(u,7)-27.87*Math.pow(u,8)
+    -5.79*Math.pow(u,9)-2.45*Math.pow(u,10))/3600;
+  return{dp:dp,de:de,eps:e0+de/3600};}
+/* ecliptic lon/lat/distance to an equatorial-of-date vector, km */
+function eqv(lon,lat,r,eps){const cl=cosD(lat),ce=cosD(eps),se=sinD(eps);
+  const x=cl*cosD(lon),y=cl*sinD(lon),z=sinD(lat);
+  return[r*x,r*(y*ce-z*se),r*(y*se+z*ce)];}
+const AUKM=149597870.7,RE=6378.137,EF2=0.00669437999014,RSUNKM=696000,RMOONKM=1737.4;
+function sunVec(T,n){
+  const L0=280.46646+36000.76983*T+0.0003032*T*T;
+  const M=357.52911+35999.05029*T-0.0001537*T*T;
+  const e=0.016708634-0.000042037*T-0.0000001267*T*T;
+  const C=(1.914602-0.004817*T-0.000014*T*T)*sinD(M)+(0.019993-0.000101*T)*sinD(2*M)
+    +0.000289*sinD(3*M);
+  const R=1.000001018*(1-e*e)/(1+e*cosD(M+C));
+  const lam=L0+C-0.00569-0.00478*sinD(125.04-1934.136*T);   /* aberration, nutation */
+  return eqv(lam,0,R*AUKM,n.eps);}
+function moonVec(T,n){
+  const Lp=218.3164477+481267.88123421*T-0.0015786*T*T+T*T*T/538841-Math.pow(T,4)/65194000;
+  const D=297.8501921+445267.1114034*T-0.0018819*T*T+T*T*T/545868-Math.pow(T,4)/113065000;
+  const M=357.5291092+35999.0502909*T-0.0001536*T*T+T*T*T/24490000;
+  const Mp=134.9633964+477198.8675055*T+0.0087414*T*T+T*T*T/69699-Math.pow(T,4)/14712000;
+  const F=93.2720950+483202.0175233*T-0.0036539*T*T-T*T*T/3526000+Math.pow(T,4)/863310000;
+  const E=1-0.002516*T-0.0000074*T*T;
+  const A1=119.75+131.849*T,A2=53.09+479264.290*T,A3=313.45+481266.484*T;
+  let sl=0,sr=0,sb=0;
+  for(let i=0;i<MLR.length;i+=6){const a=MLR[i]*D+MLR[i+1]*M+MLR[i+2]*Mp+MLR[i+3]*F;
+    const f=MLR[i+1]===0?1:(Math.abs(MLR[i+1])===1?E:E*E);
+    sl+=MLR[i+4]*f*sinD(a);sr+=MLR[i+5]*f*cosD(a);}
+  for(let i=0;i<MBT.length;i+=5){const a=MBT[i]*D+MBT[i+1]*M+MBT[i+2]*Mp+MBT[i+3]*F;
+    const f=MBT[i+1]===0?1:(Math.abs(MBT[i+1])===1?E:E*E);
+    sb+=MBT[i+4]*f*sinD(a);}
+  sl+=3958*sinD(A1)+1962*sinD(Lp-F)+318*sinD(A2);
+  sb+=-2235*sinD(Lp)+382*sinD(A3)+175*sinD(A1-F)+175*sinD(A1+F)
+     +127*sinD(Lp-Mp)-115*sinD(Lp+Mp);
+  return eqv(Lp+sl/1e6+n.dp/3600,sb/1e6,385000.56+sr/1000,n.eps);}
+/* One evaluation per instant, cached: every caller wants the same three things.
+   Positions are computed at TD, the Earth's rotation at UT — that distinction is
+   the whole reason delta-T is here. */
+let _skyC={jd:null};
+function sky(jdUT){
+  if(_skyC.jd===jdUT)return _skyC;
+  const Tu=(jdUT-2451545.0)/36525;
+  const T=(jdUT+deltaT(jdYear(jdUT))/86400-2451545.0)/36525,n=nut(T);
+  let th=280.46061837+360.98564736629*(jdUT-2451545.0)+0.000387933*Tu*Tu-Tu*Tu*Tu/38710000;
+  th=(((th+n.dp*cosD(n.eps)/3600)%360)+360)%360;
+  _skyC={jd:jdUT,S:sunVec(T,n),M:moonVec(T,n),th:th};
+  return _skyC;}
+const vlen=a=>Math.hypot(a[0],a[1],a[2]);
+const vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function subsolar(jd){const s=sky(jd),S=s.S,d=vlen(S);
+  return{lat:Math.asin(clamp1(S[2]/d))/RAD,
+         lon:((Math.atan2(S[1],S[0])/RAD-s.th)%360+540)%360-180};}
+/* The shadow axis in Earth-fixed coordinates, which is all the globe needs:
+   the axis direction pointing away from the Sun, the foot of its perpendicular
+   from Earth's centre, that distance in Earth radii (gamma), and the penumbral
+   cone radius there. Defined whether or not the axis strikes Earth, which is
+   what lets a partial eclipse draw the region that sees it. */
+function axisAt(jd){const s=sky(jd);
+  const u=[s.M[0]-s.S[0],s.M[1]-s.S[1],s.M[2]-s.S[2]],dsm=vlen(u);
+  u[0]/=dsm;u[1]/=dsm;u[2]/=dsm;
+  const t0=-vdot(s.M,u),P=[s.M[0]+t0*u[0],s.M[1]+t0*u[1],s.M[2]+t0*u[2]];
+  const L1=(RMOONKM+Math.abs(t0)*(RSUNKM+RMOONKM)/dsm)/RE;
+  const c=cosD(s.th),sn=sinD(s.th);
+  const fx=v=>[v[0]*c+v[1]*sn,-v[0]*sn+v[1]*c,v[2]];
+  const Pf=fx(P);
+  return{u:fx(u),P:[Pf[0]/RE,Pf[1]/RE,Pf[2]/RE],g:vlen(P)/RE,L1:L1};}
+/* Where an observer stands, and what the Sun and Moon look like from there.
+   The Moon's parallax is over a degree — two of its own diameters — so the
+   topocentric step is not a refinement here, it is the whole question of
+   whether you see the eclipse at all. */
+function local(jd,lat,lon){const s=sky(jd);
+  const t=(s.th+lon)*RAD,la=lat*RAD,sl=Math.sin(la),cl=Math.cos(la);
+  const N=RE/Math.sqrt(1-EF2*sl*sl),ct=Math.cos(t),st=Math.sin(t);
+  const O=[N*cl*ct,N*cl*st,N*(1-EF2)*sl];
+  const zen=[cl*ct,cl*st,sl],est=[-st,ct,0],nor=[-sl*ct,-sl*st,cl];
+  const Sv=[s.S[0]-O[0],s.S[1]-O[1],s.S[2]-O[2]];
+  const Mv=[s.M[0]-O[0],s.M[1]-O[1],s.M[2]-O[2]];
+  const dS=vlen(Sv),dM=vlen(Mv);
+  const uS=[Sv[0]/dS,Sv[1]/dS,Sv[2]/dS],uM=[Mv[0]/dM,Mv[1]/dM,Mv[2]/dM];
+  const hz=v=>({alt:Math.asin(clamp1(vdot(v,zen)))/RAD,
+                az:((Math.atan2(vdot(v,est),vdot(v,nor))/RAD)+360)%360});
+  const rS=Math.asin(RSUNKM/dS)/RAD,rM=Math.asin(RMOONKM/dM)/RAD;
+  const sep=Math.acos(clamp1(vdot(uS,uM)))/RAD;
+  const mag=Math.max(0,(rS+rM-sep)/(2*rS));
+  /* east/north/up components as well, since that is the frame the sky is drawn in */
+  const toH=v=>[vdot(v,est),vdot(v,nor),vdot(v,zen)];
+  return{S:hz(uS),M:hz(uM),hS:toH(uS),hM:toH(uM),toH:toH,
+         zen:zen,est:est,nor:nor,
+         rS:rS,rM:rM,sep:sep,mag:mag,obsc:overlap(rS,rM,sep),
+         tot:sep<rM-rS,ann:sep<rS-rM};}
+/* fraction of the solar disc the Moon covers: the classic two-circle lens */
+function overlap(r1,r2,d){
+  if(d>=r1+r2)return 0;
+  if(d<=Math.abs(r1-r2))return Math.min(1,(r2*r2)/(r1*r1));
+  const a=r1*r1*Math.acos(clamp1((d*d+r1*r1-r2*r2)/(2*d*r1)))
+         +r2*r2*Math.acos(clamp1((d*d+r2*r2-r1*r1)/(2*d*r2)))
+         -0.5*Math.sqrt(Math.max(0,(-d+r1+r2)*(d+r1-r2)*(d-r1+r2)*(d+r1+r2)));
+  return Math.min(1,a/(Math.PI*r1*r1));}
 function camOf(w,h){const R=Math.min(w,h)*.46*gZoom,sl=Math.sin(gLon*RAD),cl=Math.cos(gLon*RAD);
   return{cx:w/2,cy:h/2,R:R,c:llv(gLon,gLat),e:[-sl,cl,0],
     n:[-Math.sin(gLat*RAD)*cl,-Math.sin(gLat*RAD)*sl,Math.cos(gLat*RAD)]};}
@@ -559,66 +782,76 @@ function trackAt(p,f){prep(p);const x=fIdx(p,f);
 function widthAt(p,f){if(!p.ws)return p.w;
   const v=spl(p.ws,fIdx(p,f));
   return Math.max(1,Math.min(v,Math.max(600,p.w*6)));}
-/* The partial-eclipse zone at the moment the clock is showing.
+/* ---------- the clock ----------
 
-   The shadow axis is the Sun->Moon line, which during an eclipse is within about
-   0.15 degrees of pointing straight away from the Sun, so -sun is a good enough
-   axis direction and comes free from the sub-solar point. For an eclipse with a
-   track the axis passes through the umbra, which pins the perpendicular foot and
-   guarantees the umbra sits inside the zone. Partials have no track, so they fall
-   back to the stored geometry at greatest eclipse, which is when the zone is
-   largest. */
-function penNow(e,sub){
-  if(!e||!e.pen)return null;
-  if(e.p){
-    const u=[-llv(sub.lon,sub.lat)[0],-llv(sub.lon,sub.lat)[1],-llv(sub.lon,sub.lat)[2]];
-    const c=trackAt(e.p,tFrac),v=llv(c[0],c[1]);
-    const d=v[0]*u[0]+v[1]*u[1]+v[2]*u[2];
-    return{u:u,P:[v[0]-d*u[0],v[1]-d*u[1],v[2]-d*u[2]],L1:e.pen.L1};}
-  const u=llv(e.pen.u[0],e.pen.u[1]),a=llv(e.pen.c[0],e.pen.c[1]);
-  return{u:u,P:[a[0]*e.pen.g,a[1]*e.pen.g,a[2]*e.pen.g],L1:e.pen.L1};}
+   Every eclipse gets a window running from first to last penumbral contact —
+   the whole event, not just the umbra's crossing. That is what gives a partial
+   eclipse, which has no track at all, something for its slider to run along, and
+   it is also the span over which somebody standing off to one side of a total
+   track sees anything happen.
+
+   Greatest eclipse is the axis's closest approach to Earth's centre; the
+   contacts are where the penumbral cone stops reaching Earth. Where a track was
+   computed its stored time of greatest eclipse is kept as the anchor, so the
+   umbra still sits exactly where it always did. Cached per eclipse. */
+function win(e){
+  if(e._w)return e._w;
+  const d0=jdOf(e.ymd[0],e.ymd[1],e.ymd[2],0);
+  let bj=d0,bv=1e9;
+  for(let k=-24;k<=36;k++){const j=d0+k/24,v=axisAt(j).g;if(v<bv){bv=v;bj=j;}}
+  let lo=bj-1/24,hi=bj+1/24;
+  for(let i=0;i<34;i++){const a=lo+(hi-lo)/3,b=hi-(hi-lo)/3;
+    if(axisAt(a).g<axisAt(b).g)hi=b;else lo=a;}
+  let g=(lo+hi)/2;
+  /* reach: how far the penumbra still touches Earth, either side of greatest */
+  const miss=j=>{const x=axisAt(j);return x.g-(1+x.L1);};
+  const edge=dir=>{let ok=g,bad=null;
+    for(let k=1;k<=26;k++){const j=g+dir*k/96;if(miss(j)>0){bad=j;break;}ok=j;}
+    if(bad===null)return dir*26/96;
+    for(let i=0;i<26;i++){const m=(ok+bad)/2;miss(m)>0?bad=m:ok=m;}
+    return ok-g;};
+  const a=edge(-1)*1440,b=edge(1)*1440;
+  if(e.p){const gs=jdOf(e.ymd[0],e.ymd[1],e.ymd[2],e.p.ut);
+    /* the stored date comes from TD and the stored time from UT, so they can
+       disagree by a day; take whichever whole day lands nearest */
+    const gg=gs+Math.round(g-gs);
+    return e._w={g:gg,a:a+(g-gg)*1440,b:b+(g-gg)*1440};}
+  return e._w={g:g,a:a,b:b};}
+/* minutes from greatest eclipse at the current slider position, and the Julian
+   day that lands on */
+const tOff=e=>{const w=win(e);return w.a+(w.b-w.a)*tFrac;};
+const tJD=e=>win(e).g+tOff(e)/1440;
+/* where the umbra is along its track: 0 at the sunrise end, 1 at the sunset end,
+   outside [0,1] while the eclipse is still only partial anywhere on Earth */
+const tUF=e=>e&&e.p?(tOff(e)+e.p.span/2)/e.p.span:0.5;
+/* The partial-eclipse zone at the moment the clock is showing: where the
+   penumbral cylinder cuts the globe on the sunward side. */
+function penNow(e){return e?axisAt(tJD(e)):null;}
 /* The region that sees any part of the eclipse: the union of the instantaneous
    penumbral zones across the whole event, which is what published eclipse maps
    draw and what actually encloses the entire track.
 
-   Frames come from the track times, then march outward past both ends — the
-   partial phases begin before the umbra lands and end after it leaves — using
-   the endpoint velocity of the axis foot, stopping once the penumbra no longer
-   reaches Earth at all. The boundary is then found by sweeping azimuths out from
-   the mid-eclipse point, which assumes the union is star-shaped about it; that
-   holds for the lens shape these regions actually take. Cached per eclipse. */
+   The boundary is found by sweeping azimuths out from the mid-eclipse point,
+   which assumes the union is star-shaped about it; that holds for the lens shape
+   these regions actually take. Cached per eclipse. */
 function penFrames(e){
-  const L1=e.pen.L1,N=12,fr=[];
-  const uAt=mins=>{const jd=jdOf(e.ymd[0],e.ymd[1],e.ymd[2],((mins%1440)+1440)%1440);
-    const s=subsolar(jd),v=llv(s.lon,s.lat);return[-v[0],-v[1],-v[2]];};
-  for(let i=0;i<=N;i++){const f=i/N,mins=e.p.ut+e.p.span*(f-.5);
-    const u=uAt(mins),c=trackAt(e.p,f),v=llv(c[0],c[1]);
-    const d=v[0]*u[0]+v[1]*u[1]+v[2]*u[2];
-    fr.push({u:u,P:[v[0]-d*u[0],v[1]-d*u[1],v[2]-d*u[2]],m:mins});}
-  const step=e.p.span/N;
-  for(const dir of[-1,1]){
-    const a=dir<0?fr[0]:fr[fr.length-1],b=dir<0?fr[1]:fr[fr.length-2];
-    const dP=[a.P[0]-b.P[0],a.P[1]-b.P[1],a.P[2]-b.P[2]];
-    for(let k=1;k<=14;k++){
-      const P=[a.P[0]+dP[0]*k,a.P[1]+dP[1]*k,a.P[2]+dP[2]*k];
-      if(Math.hypot(P[0],P[1],P[2])>1+L1)break;
-      const m=a.m+dir*step*k,u=uAt(m);
-      const d=P[0]*u[0]+P[1]*u[1]+P[2]*u[2];
-      fr.push({u:u,P:[P[0]-d*u[0],P[1]-d*u[1],P[2]-d*u[2]],m:m});}}
+  const w=win(e),N=26,fr=[];
+  for(let i=0;i<=N;i++)fr.push(axisAt(w.g+(w.a+(w.b-w.a)*i/N)/1440));
   return fr;}
 function penUnion(e){
-  if(!e||!e.p||!e.pen)return null;
-  if(e._pu)return e._pu;
-  const fr=penFrames(e),L1=e.pen.L1;
+  if(!e)return null;
+  if(e._pu!==undefined)return e._pu;
+  const fr=penFrames(e);
   const inside=p=>{for(const f of fr){
     const d=p[0]*f.u[0]+p[1]*f.u[1]+p[2]*f.u[2];
     if(d>=0)continue;
     const x=p[0]-d*f.u[0]-f.P[0],y=p[1]-d*f.u[1]-f.P[1],z=p[2]-d*f.u[2]-f.P[2];
-    if(x*x+y*y+z*z<L1*L1)return true;}
+    if(x*x+y*y+z*z<f.L1*f.L1)return true;}
     return false;};
-  const c0v=trackAt(e.p,.5),c0=llv(c0v[0],c0v[1]);
+  /* sweep out from the most-eclipsed spot at greatest eclipse */
+  const c0=deepVec(fr[fr.length>>1]);
+  if(!inside(c0))return e._pu=null;
   let e1=Math.abs(c0[2])<.9?[-c0[1],c0[0],0]:[0,-c0[2],c0[1]];
-  let n1=Math.hypot(e1[0],e1[1],e1[2]);e1=[e1[0]/n1,e1[1]/n1,e1[2]/n1];
   const e2=[c0[1]*e1[2]-c0[2]*e1[1],c0[2]*e1[0]-c0[0]*e1[2],c0[0]*e1[1]-c0[1]*e1[0]];
   const at=(th,r)=>{const cr=Math.cos(r),sr=Math.sin(r),ct=Math.cos(th),st=Math.sin(th);
     return[cr*c0[0]+sr*(ct*e1[0]+st*e2[0]),cr*c0[1]+sr*(ct*e1[1]+st*e2[1]),
@@ -661,7 +894,13 @@ function edges(p,n){const L=[],R=[],f0=.03,f1=.97,cap=Math.max(500,p.w*2.5);
     L.push(dest(c[0],c[1],br-Math.PI/2,hw));
     R.push(dest(c[0],c[1],br+Math.PI/2,hw));}
   return[L,R];}
-const tMin=e=>e&&e.p?((e.p.ut+e.p.span*(tFrac-.5))%1440+1440)%1440:720;
+/* screen point back to a place on the globe, for standing somewhere */
+function unpj(px,py,k){const X=(px-k.cx)/k.R,Y=-(py-k.cy)/k.R,q=X*X+Y*Y;
+  if(q>1)return null;
+  const Z=Math.sqrt(1-q);
+  const w=[X*k.e[0]+Y*k.n[0]+Z*k.c[0],X*k.e[1]+Y*k.n[1]+Z*k.c[1],
+           X*k.e[2]+Y*k.n[2]+Z*k.c[2]];
+  return[Math.atan2(w[1],w[0])/RAD,Math.asin(clamp1(w[2]))/RAD];}
 function sizeGlobe(){
   const w=globeBox.clientWidth||320;
   /* keep the globe inside whatever the panel actually is, or on a phone the
@@ -700,7 +939,7 @@ function drawGlobe(){
   for(const p of LAND)arc(p.concat([p[0]]),k,"#2f4a63");
   gb.restore();
   gb.save();gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.clip();
-  const jd=e?jdOf(e.ymd[0],e.ymd[1],e.ymd[2],tMin(e)):2451545.0;
+  const jd=e?tJD(e):nowJD();
   const sub=subsolar(jd);
   gb.drawImage(shade(k,w,h,sub),0,0,w,h);
   /* city pins, once you are zoomed in far enough for them to mean anything */
@@ -740,10 +979,11 @@ function drawGlobe(){
   const pu=penUnion(e);
   if(pu){gb.setLineDash([1.5,3.5]);gb.lineWidth=1.1;gb.globalAlpha=.9;
     arc(pu,k,"#93a6bd");gb.setLineDash([]);gb.globalAlpha=1;}
-  else{const pn=penNow(e,sub);
-    if(pn){gb.setLineDash([1.5,3.5]);gb.lineWidth=1.1;gb.globalAlpha=.9;
-      arc(penCurve(pn.u,pn.P,pn.L1,360),k,"#93a6bd");
-      gb.setLineDash([]);gb.globalAlpha=1;}}
+  /* and the zone at this instant inside it, which is the part actually seeing
+     the eclipse right now — for a partial it is the only thing that moves */
+  const pn=penNow(e);
+  if(pn){gb.setLineDash([]);gb.lineWidth=1;gb.globalAlpha=pu?.55:.9;
+    arc(penCurve(pn.u,pn.P,pn.L1,360),k,"#6b8099");gb.globalAlpha=1;}
   if(e&&e.p){
     const ns=Math.round(Math.max(140,Math.min(420,90*Math.sqrt(gZoom))));
     const [eL_,eR_]=edges(e.p,ns);
@@ -758,19 +998,40 @@ function drawGlobe(){
         run=run.length?[run[run.length-1]]:[];cur=ty;}
       run.push(pt);}
     if(run.length>1)arc(run,k,COL[cur?1:0]);
-    const u=trackAt(e.p,tFrac),us=pj(u[0],u[1],k);
-    if(us.v>0){
-      const rr=Math.max(2.5,k.R*(widthAt(e.p,tFrac)/2)/6371);
-      const uc=COL[typeAt(e.p,tFrac)?1:0];
-      gb.fillStyle="rgba(7,10,16,.85)";gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.fill();
-      gb.strokeStyle=uc;gb.lineWidth=1.6;gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.stroke();
-      gb.strokeStyle=uc;gb.globalAlpha=.5;gb.lineWidth=1;
-      gb.beginPath();gb.arc(us.x,us.y,rr+6,0,6.2832);gb.stroke();gb.globalAlpha=1;
-      const dd=Math.round(durAt(e.p,tFrac));
-      if(dd>0){gb.fillStyle=COL[e.t];gb.font='500 10px "IBM Plex Mono",monospace';
-        gb.textAlign="left";gb.textBaseline="middle";
-        gb.fillText(fd(dd),us.x+rr+9,us.y);}}
+    /* the umbra is only on Earth for the middle stretch of the event: before and
+       after that the clock is running but the eclipse is partial everywhere */
+    const uf=tUF(e);
+    if(uf>=0&&uf<=1){
+      const u=trackAt(e.p,uf),us=pj(u[0],u[1],k);
+      if(us.v>0){
+        const rr=Math.max(2.5,k.R*(widthAt(e.p,uf)/2)/6371);
+        const uc=COL[typeAt(e.p,uf)?1:0];
+        gb.fillStyle="rgba(7,10,16,.85)";gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.fill();
+        gb.strokeStyle=uc;gb.lineWidth=1.6;gb.beginPath();gb.arc(us.x,us.y,rr,0,6.2832);gb.stroke();
+        gb.strokeStyle=uc;gb.globalAlpha=.5;gb.lineWidth=1;
+        gb.beginPath();gb.arc(us.x,us.y,rr+6,0,6.2832);gb.stroke();gb.globalAlpha=1;
+        const dd=Math.round(durAt(e.p,uf));
+        if(dd>0){gb.fillStyle=COL[e.t];gb.font='500 10px "IBM Plex Mono",monospace';
+          gb.textAlign="left";gb.textBaseline="middle";
+          gb.fillText(fd(dd),us.x+rr+9,us.y);}}}
   }
+  /* where you are standing, and what the sky is doing there */
+  if(obs){const os=pj(obs[0],obs[1],k);
+    if(os.v>0){
+      const L=e?local(jd,obs[1],obs[0]):null;
+      const c=!L||L.obsc<=0?"#93a6bd":L.tot?"#f4f1e6":L.ann?"#e8a33d":"#8fd4c4";
+      gb.strokeStyle="rgba(4,7,12,.9)";gb.lineWidth=3.4;
+      gb.beginPath();gb.moveTo(os.x,os.y-10);gb.lineTo(os.x,os.y);gb.stroke();
+      gb.strokeStyle=c;gb.lineWidth=1.6;
+      gb.beginPath();gb.moveTo(os.x,os.y-10);gb.lineTo(os.x,os.y);gb.stroke();
+      gb.beginPath();gb.arc(os.x,os.y-12.5,2.6,0,6.2832);
+      gb.fillStyle=c;gb.fill();
+      gb.beginPath();gb.arc(os.x,os.y,2,0,6.2832);gb.fillStyle=c;gb.fill();
+      if(L){gb.font='500 9px "IBM Plex Mono",monospace';gb.textAlign="center";
+        gb.textBaseline="bottom";
+        gb.strokeStyle="rgba(4,7,12,.9)";gb.lineWidth=3;
+        const s=L.obsc>0?Math.round(L.obsc*100)+"% covered":"nothing yet";
+        gb.strokeText(s,os.x,os.y-17);gb.fillStyle=c;gb.fillText(s,os.x,os.y-17);}}}
   gb.restore();
   gb.strokeStyle="#2b3d52";gb.lineWidth=1;gb.beginPath();gb.arc(k.cx,k.cy,k.R,0,6.2832);gb.stroke();
   gb.fillStyle="#4d5c72";gb.font='9px "IBM Plex Mono",monospace';
@@ -779,77 +1040,1056 @@ function drawGlobe(){
   gb.fillText("×"+gZoom.toFixed(1)+(gZoom<2.2?"  — zoom in for cities":""),8,21);
   if(e&&!e.p){gb.textAlign="center";gb.fillStyle="#7d8ea6";
     gb.fillText(e.t===3
-      ?"partial only — the axis misses Earth; dotted line is the zone at greatest eclipse"
-      :"track not computed before 1000 CE — dotted line is the zone at greatest eclipse",w/2,h-16);}
+      ?"partial only — the axis misses Earth; solid line is who sees it right now"
+      :"track not computed before 1000 CE; solid line is who sees it right now",w/2,h-16);}
   else if(e){gb.textAlign="center";gb.fillStyle="#6b7a90";
-    gb.fillText("dotted outer line: everyone who sees any of this eclipse",w/2,h-16);}
+    gb.fillText(obs?"tap anywhere to move · drag the pin to walk it"
+      :"dotted: everyone who sees any of it · tap the globe to stand there",w/2,h-16);}
 }
-const TPLAY=30000;   /* one crossing takes half a minute, whatever its length */
+/* ---------- standing on the ground ----------
+
+   The sky in stereographic projection, which has the useful property of turning
+   every circle on the sphere into a circle on screen: the Sun and the Moon stay
+   round however far off-centre they drift, and the horizon is one clean curve.
+   Look direction and field of view are yours to drag; everything in it comes
+   from the topocentric Sun and Moon at whatever the clock says. */
+const skyC=document.getElementById("sky"),sc=skyC.getContext("2d");
+const skyBox=document.getElementById("skyBox");
+let obs=null,vAz=180,vAlt=25,vFov=68,skySize=0,circ=null,vTrack=true;
+/* the fifty-odd stars that are actually worth drawing when the sky goes out:
+   right ascension (hours), declination, magnitude, J2000 */
+const STARS=[[6.752,-16.716,-1.46],[6.399,-52.696,-0.72],[14.660,-60.834,-0.27],
+[14.261,19.182,-0.05],[18.616,38.784,0.03],[5.278,45.998,0.08],[5.242,-8.202,0.13],
+[7.655,5.225,0.34],[1.629,-57.237,0.46],[5.919,7.407,0.50],[14.064,-60.373,0.61],
+[19.846,8.868,0.77],[12.443,-63.099,0.77],[4.599,16.509,0.85],[13.420,-11.161,1.04],
+[16.490,-26.432,1.09],[7.755,28.026,1.14],[22.961,-29.622,1.16],[20.690,45.280,1.25],
+[12.795,-59.689,1.25],[10.139,11.967,1.35],[6.977,-28.972,1.50],[7.576,31.888,1.58],
+[17.560,-37.104,1.62],[12.519,-57.113,1.63],[5.418,6.350,1.64],[5.438,28.608,1.65],
+[9.220,-69.717,1.67],[5.603,-1.202,1.69],[22.137,-46.961,1.74],[5.679,-1.943,1.77],
+[12.900,55.960,1.77],[11.062,61.751,1.79],[3.405,49.861,1.79],[7.140,-26.393,1.83],
+[18.403,-34.385,1.85],[8.375,-59.510,1.86],[13.792,49.313,1.86],[17.622,-42.998,1.87],
+[5.992,44.947,1.90],[16.811,-69.028,1.91],[6.629,16.399,1.93],[20.427,-56.735,1.94],
+[2.530,89.264,1.98],[6.378,-17.956,1.98],[9.460,-8.659,2.00],[2.120,23.462,2.00],
+[10.333,19.841,2.08],[0.726,-17.987,2.04],[18.921,-26.297,2.05],[14.111,-36.370,2.06],
+[0.140,29.091,2.06],[1.162,35.621,2.06],[5.796,-9.670,2.09],[14.845,74.156,2.08],
+[17.582,12.560,2.08],[3.136,40.956,2.12],[2.065,42.330,2.10],[11.818,14.572,2.14],
+[8.060,-40.003,2.21]];
+/* Meeus ch.21: 5,000 years is enough precession to move Polaris out of the way */
+function precess(ra,dec,T){
+  const z1=(2306.2181*T+0.30188*T*T+0.017998*T*T*T)/3600;
+  const z2=(2306.2181*T+1.09468*T*T+0.018203*T*T*T)/3600;
+  const th=(2004.3109*T-0.42665*T*T-0.041833*T*T*T)/3600;
+  const A=cosD(dec)*sinD(ra+z1),B=cosD(th)*cosD(dec)*cosD(ra+z1)-sinD(th)*sinD(dec);
+  const C=sinD(th)*cosD(dec)*cosD(ra+z1)+cosD(th)*sinD(dec);
+  return[Math.atan2(A,B)/RAD+z2,Math.asin(clamp1(C))/RAD];}
+/* the view basis, and a point of the sky put on screen */
+function skyCam(w,h){
+  const f=[sinD(vAz)*cosD(vAlt),cosD(vAz)*cosD(vAlt),sinD(vAlt)];
+  /* f x zenith, normalised: the horizontal "right" of the view */
+  let r=[f[1],-f[0],0];const rn=Math.hypot(r[0],r[1])||1;r=[r[0]/rn,r[1]/rn,0];
+  const up=[r[1]*f[2]-r[2]*f[1],r[2]*f[0]-r[0]*f[2],r[0]*f[1]-r[1]*f[0]];
+  return{cx:w/2,cy:h/2,f:f,r:r,u:up,k:(h/2)/(2*Math.tan(vFov/4*RAD))};}
+function pjSky(v,c){const d=vdot(v,c.f);
+  /* the projection blows up at the point behind you; clamping keeps the horizon
+     a drawable polygon instead of one with an infinite spike in it */
+  const s=2/(1+Math.max(-0.9995,d)),cl=x=>Math.max(-1e5,Math.min(1e5,x));
+  return{x:cl(c.cx+c.k*vdot(v,c.r)*s),y:cl(c.cy-c.k*vdot(v,c.u)*s),v:d};}
+const altaz=(alt,az)=>[sinD(az)*cosD(alt),cosD(az)*cosD(alt),sinD(alt)];
+/* and back: which bit of sky a pixel is looking at, which is what lets the sky
+   be coloured by real altitude instead of by height up the canvas */
+function unSky(px,py,c){const X=(px-c.cx)/c.k,Y=-(py-c.cy)/c.k,R=Math.hypot(X,Y);
+  if(R<1e-9)return c.f.slice();
+  const th=2*Math.atan(R/2),ct=Math.cos(th),st=Math.sin(th),ux=X/R,uy=Y/R;
+  return[c.f[0]*ct+(ux*c.r[0]+uy*c.u[0])*st,
+         c.f[1]*ct+(ux*c.r[1]+uy*c.u[1])*st,
+         c.f[2]*ct+(ux*c.r[2]+uy*c.u[2])*st];}
+function sizeSky(){
+  const w=skyBox.clientWidth||320;
+  const room=detail.classList.contains("expanded")
+    ?Math.max(300,(detail.clientHeight||520)-150)
+    :Math.max(210,Math.min(520,(detail.clientHeight||420)-176));
+  skySize=Math.max(200,Math.min(Math.round(w*0.78),room));
+  skyBox.style.height=skySize+"px";
+  const dp=Math.min(devicePixelRatio||1,2);
+  skyC.width=Math.round(w*dp);skyC.height=Math.round(skySize*dp);
+  sc.setTransform(dp,0,0,dp,0,0);
+  return{w:w,h:skySize};}
+/* Sky colour: a ladder of zenith/horizon pairs against solar altitude, then the
+   eclipse dims it. Brightness tracks the uncovered area of the disc almost all
+   the way, then falls off a cliff in the last three per cent — which is exactly
+   why totality is startling and 99 per cent is not. */
+const SKYPAL=[[-20,[5,7,13],[9,12,19]],[-12,[7,11,20],[22,29,45]],
+ [-6,[12,22,42],[66,58,76]],[-2,[24,48,86],[158,98,72]],[0,[38,72,118],[210,138,86]],
+ [4,[52,100,150],[188,172,158]],[12,[48,110,178],[150,180,205]],[40,[30,95,175],[135,175,215]]];
+function skyCols(alt,dim){
+  let i=0;while(i<SKYPAL.length-2&&alt>SKYPAL[i+1][0])i++;
+  const a=SKYPAL[i],b=SKYPAL[i+1];
+  const t=Math.max(0,Math.min(1,(alt-a[0])/(b[0]-a[0])));
+  const mix=(p,q)=>p.map((v,j)=>v+(q[j]-v)*t);
+  let z=mix(a[1],b[1]),hz=mix(a[2],b[2]);
+  /* the eye is roughly cube-root in luminance, so that is the curve the colour
+     is dimmed along; the fall stays dramatic because dimOf already is */
+  const nz=SKYPAL[0][1],nh=SKYPAL[0][2],f=Math.pow(dim,0.33);
+  z=z.map((v,j)=>nz[j]+(v-nz[j])*f);hz=hz.map((v,j)=>nh[j]+(v-nh[j])*f);
+  return{z:z,h:hz};}
+/* the colour of one patch of sky, at its own altitude. Deep in an eclipse the
+   horizon all the way round takes on the warm cast of the uneclipsed daylight
+   a couple of hundred kilometres away, which is the 360-degree sunset people
+   remember from totality. */
+function skyRGB(skyAlt,cc,obsc){
+  const t=Math.pow(Math.max(0,Math.min(1,skyAlt/55)),0.7);
+  let col=cc.h.map((v,i)=>v+(cc.z[i]-v)*t);
+  if(obsc>0.965){
+    const q=Math.min(1,(obsc-0.965)/0.035)*0.85
+      *(1-Math.min(1,Math.max(0,skyAlt)/26));
+    const warm=[198,116,76];
+    col=col.map((v,i)=>v+(warm[i]-v)*q);}
+  return col;}
+const rgb=c=>"rgb("+Math.round(c[0])+","+Math.round(c[1])+","+Math.round(c[2])+")";
+function dimOf(o){if(o<=0)return 1;
+  if(o<0.97)return 1-o;
+  const x=Math.max(0,(1-o)/0.03);
+  return Math.max(0.0006,0.03*Math.pow(x,2.1));}
+/* a deterministic wobble, so a given eclipse's corona is always the same one */
+function rnd(s){let x=Math.sin(s*127.1+311.7)*43758.5453;return x-Math.floor(x);}
+
+/* ---------- WebGL sky ----------
+
+   The sky, the two discs and the corona all live at infinity, so the whole scene
+   is a function of the direction a pixel is looking — which makes it one
+   full-screen fragment shader with no geometry and no matrices at all.
+
+   Colour comes from Preetham's analytic daylight model: Perez's five-parameter
+   sky function fitted against turbidity, giving CIE Yxy per direction, which is
+   why the horizon warms and the zenith deepens on their own instead of being
+   painted in by hand.
+
+   The eclipse enters as the one physical change that matters. Obscuration cuts
+   the direct beam, but the umbra is only a couple of hundred kilometres across
+   and the atmosphere goes on scattering sunlight in from all round its edge —
+   light that has come the long way through the lower atmosphere and arrives red.
+   That second term is the 360-degree sunset at totality, and it falls out of the
+   model rather than being faked.
+
+   If any of this fails to compile or the context is refused, glOn stays false and
+   the 2-D renderer below draws everything exactly as it did before. */
+const sky3d=document.getElementById("sky3d");
+let GL=null,glOn=false,glTried=false,glProg=null,glStar=null,glBuf=null,glStarBuf=null,glStarN=0;
+const SKY_VS=`attribute vec2 aPos;void main(){gl_Position=vec4(aPos,0.0,1.0);}`;
+const SKY_FS=`precision highp float;
+uniform vec2 uRes;uniform float uK;
+uniform vec3 uRight,uUp,uFwd,uSun,uMoon,uFlare;
+uniform float uSunR,uMoonR,uObsc,uTurb,uAmb,uExp,uFlareI,uSeed,uNight;
+const float PI=3.14159265359;
+float perez(float cosT,float g,float A,float B,float C,float D,float E){
+  return (1.0+A*exp(B/max(cosT,0.02)))*(1.0+C*exp(D*g)+E*cos(g)*cos(g));}
+/* CIE Yxy straight out of Preetham, then into linear sRGB */
+vec3 skyCol(vec3 dir,vec3 sun,float T,out float lum){
+  float cosT=max(dir.z,0.0);
+  float cosG=clamp(dot(dir,sun),-1.0,1.0);
+  float g=acos(cosG);
+  float tS=acos(clamp(sun.z,-1.0,1.0));
+  float AY= 0.1787*T-1.4630,BY=-0.3554*T+0.4275,CY=-0.0227*T+5.3251,
+        DY= 0.1206*T-2.5771,EY=-0.0670*T+0.3703;
+  float Ax=-0.0193*T-0.2592,Bx=-0.0665*T+0.0008,Cx=-0.0004*T+0.2125,
+        Dx=-0.0641*T-0.8989,Ex=-0.0033*T+0.0452;
+  float Ay=-0.0167*T-0.2608,By=-0.0950*T+0.0092,Cy=-0.0079*T+0.2102,
+        Dy=-0.0441*T-1.6537,Ey=-0.0109*T+0.0529;
+  float chi=(4.0/9.0-T/120.0)*(PI-2.0*tS);
+  float Yz=(4.0453*T-4.9710)*tan(chi)-0.2155*T+2.4192;
+  float s1=tS,s2=s1*s1,s3=s2*s1;
+  float xz=( 0.00166*s3-0.00375*s2+0.00209*s1)*T*T
+          +(-0.02903*s3+0.06377*s2-0.03202*s1+0.00394)*T
+          +( 0.11693*s3-0.21196*s2+0.06052*s1+0.25886);
+  float yz=( 0.00275*s3-0.00610*s2+0.00317*s1)*T*T
+          +(-0.04214*s3+0.08970*s2-0.04153*s1+0.00516)*T
+          +( 0.15346*s3-0.26756*s2+0.06670*s1+0.26688);
+  float dY=perez(cosT,g,AY,BY,CY,DY,EY)/perez(1.0,tS,AY,BY,CY,DY,EY);
+  float dx=perez(cosT,g,Ax,Bx,Cx,Dx,Ex)/perez(1.0,tS,Ax,Bx,Cx,Dx,Ex);
+  float dy=perez(cosT,g,Ay,By,Cy,Dy,Ey)/perez(1.0,tS,Ay,By,Cy,Dy,Ey);
+  float Y=max(Yz*dY,0.0),x=xz*dx,y=max(yz*dy,1e-4);
+  lum=Y;
+  float X=x/y*Y,Z=(1.0-x-y)/y*Y;
+  vec3 c=vec3( 3.2406*X-1.5372*Y-0.4986*Z,
+              -0.9689*X+1.8758*Y+0.0415*Z,
+               0.0557*X-0.2040*Y+1.0570*Z);
+  return max(c,0.0);}
+float hash(float n){return fract(sin(n*127.1+311.7)*43758.5453);}
+void main(){
+  vec2 q=(gl_FragCoord.xy-0.5*uRes)/uK;
+  float r=length(q);
+  float th=2.0*atan(r*0.5);
+  vec3 dir=(r<1e-6)?uFwd:normalize(cos(th)*uFwd+sin(th)*((q.x/r)*uRight+(q.y/r)*uUp));
+  /* Preetham has nothing to say once the Sun is down, so it is evaluated with the
+     Sun held at the horizon and faded out into a night sky underneath */
+  vec3 sunUp=uSun;
+  sunUp.z=max(sunUp.z,0.0);
+  sunUp=normalize(sunUp+vec3(0.0,0.0,1e-5));
+  float lum;
+  vec3 col=skyCol(dir,sunUp,uTurb,lum);
+  float day=smoothstep(-0.20,0.02,uSun.z);
+  col*=day;lum*=day;
+  /* the eclipse: direct beam cut by obscuration, plus what the atmosphere
+     scatters in from outside the umbra, which arrives reddened and along the
+     horizon */
+  float horiz=pow(1.0-clamp(dir.z,0.0,1.0),3.0);
+  float direct=1.0-uObsc;
+  /* blue-grey overhead where the light has come almost straight down through the
+     umbra, orange round the rim where it has travelled a long shallow path in
+     from the sunlit air outside */
+  vec3 ambCol=mix(vec3(0.34,0.46,0.66),vec3(1.00,0.42,0.20),horiz);
+  col=col*direct+lum*uAmb*(0.22+0.78*horiz)*ambCol;
+  /* night: a cold gradient that the twilight fades down into */
+  col+=vec3(0.055,0.095,0.190)*(1.0-day)*(0.35+0.65*horiz)*uNight;
+  float aS=acos(clamp(dot(dir,uSun),-1.0,1.0));
+  float aM=acos(clamp(dot(dir,uMoon),-1.0,1.0));
+  /* corona, only worth drawing once the photosphere is gone */
+  if(uObsc>0.995&&aM>uMoonR){
+    float k=aM/uMoonR;
+    /* streamers, on two scales, brightest round the equator of a tilted axis —
+       the real corona follows the Sun's magnetic field, which is why it has
+       equatorial wings and short polar brushes rather than an even halo */
+    float ang=atan(dot(dir,uUp)-dot(uMoon,uUp),dot(dir,uRight)-dot(uMoon,uRight));
+    float s1=0.60+0.40*sin(ang*6.0+uSeed*11.0);
+    float s2=0.72+0.28*sin(ang*13.0-uSeed*7.0);
+    float eq=0.45+0.55*abs(cos(ang-uSeed*3.1));
+    float st=s1*s2*mix(0.55,1.0,eq);
+    float f=pow(1.0/k,2.4)*st+pow(1.0/k,7.0)*0.9;
+    col+=vec3(0.94,0.96,1.00)*f*5.0;
+    /* chromosphere: a thin red rim for the few seconds either side of totality */
+    col+=vec3(1.0,0.26,0.18)*exp(-(k-1.0)*150.0)*6.0;}
+  /* The Sun, limb-darkened. Its surface is some five orders of magnitude
+     brighter than the sky beside it, which is the whole reason it blows out to
+     white while the sky keeps its colour. */
+  if(aS<uSunR&&aM>uMoonR){
+    float mu=sqrt(max(1.0-pow(aS/uSunR,2.0),0.0));
+    float I=1.0-0.60*(1.0-mu)-0.19*(1.0-mu)*(1.0-mu);
+    col+=vec3(1900.0,1830.0,1700.0)*I;}
+  /* glare off whatever sliver of photosphere is still showing */
+  float aF=acos(clamp(dot(dir,uFlare),-1.0,1.0));
+  col+=vec3(1.0,0.96,0.88)*uFlareI*exp(-aF/(uSunR*7.0))*30.0;
+  col+=vec3(1.0,0.97,0.90)*uFlareI*exp(-aF/(uSunR*46.0))*5.0;
+  /* Exposure, then tone-mapped on luminance alone. Per-channel compression
+     would wash the blue out of the sky exactly where it is strongest. */
+  col*=uExp;
+  float L=dot(col,vec3(0.2126,0.7152,0.0722));
+  col*=(L>1e-6)?(L/(1.0+L))/L:0.0;
+  gl_FragColor=vec4(pow(max(col,0.0),vec3(1.0/2.2)),1.0);}`;
+const STAR_VS=`attribute vec3 aDir;attribute float aMag;
+uniform vec3 uRight,uUp,uFwd;uniform float uK,uDpr;uniform vec2 uRes;
+varying float vI;
+void main(){
+  float d=dot(aDir,uFwd);
+  if(d<-0.3){gl_Position=vec4(9.0,9.0,9.0,1.0);gl_PointSize=1.0;vI=0.0;return;}
+  float th=acos(clamp(d,-1.0,1.0));
+  vec2 pp=vec2(dot(aDir,uRight),dot(aDir,uUp));
+  float l=length(pp);
+  vec2 px=((l<1e-6)?vec2(0.0):pp/l*(2.0*tan(th*0.5)))*uK;
+  gl_Position=vec4(px/(0.5*uRes),0.0,1.0);
+  gl_PointSize=max(1.5,(3.4-aMag*0.62))*uDpr;
+  vI=clamp(1.35-aMag*0.30,0.15,1.0);}`;
+const STAR_FS=`precision mediump float;varying float vI;uniform float uAlpha;
+void main(){
+  vec2 d=gl_PointCoord-0.5;
+  float a=exp(-dot(d,d)*22.0);
+  gl_FragColor=vec4(vec3(0.92,0.95,1.0)*vI,a*uAlpha*vI);}`;
+function glCompile(gl,type,src){const s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;}
+function glLink(gl,vs,fs){const p=gl.createProgram();
+  gl.attachShader(p,glCompile(gl,gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,glCompile(gl,gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p));
+  /* uniforms and attributes looked up once and hung off the program */
+  p.u={};p.a={};
+  const nu=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<nu;i++){const n=gl.getActiveUniform(p,i).name;
+    p.u[n]=gl.getUniformLocation(p,n);}
+  const na=gl.getProgramParameter(p,gl.ACTIVE_ATTRIBUTES);
+  for(let i=0;i<na;i++){const n=gl.getActiveAttrib(p,i).name;
+    p.a[n]=gl.getAttribLocation(p,n);}
+  return p;}
+function glInit(){
+  if(glTried)return glOn;
+  glTried=true;
+  try{
+    const gl=sky3d.getContext("webgl",{antialias:true,alpha:false,depth:true,
+      preserveDrawingBuffer:true})||sky3d.getContext("experimental-webgl");
+    if(!gl)return false;
+    GL=gl;
+    glProg=glLink(gl,SKY_VS,SKY_FS);
+    glStar=glLink(gl,STAR_VS,STAR_FS);
+    glBuf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,glBuf);
+    /* one oversized triangle covers the viewport with no seam down the middle */
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+    glStarBuf=gl.createBuffer();
+    glOn=true;
+  }catch(err){GL=null;glOn=false;}
+  return glOn;}
+/* the star field in the observer's frame, rebuilt only when the sky has turned */
+let starKey="";
+function glStars(L,jd){
+  const key=jd.toFixed(4)+":"+obs[0].toFixed(2)+":"+obs[1].toFixed(2);
+  if(key===starKey)return;
+  starKey=key;
+  const T=(jd-2451545.0)/36525,a=[];
+  for(const st of STARS){const pd=precess(st[0]*15,st[1],T);
+    const v=L.toH([cosD(pd[1])*cosD(pd[0]),cosD(pd[1])*sinD(pd[0]),sinD(pd[1])]);
+    if(v[2]<-0.05)continue;
+    a.push(v[0],v[1],v[2],st[2]);}
+  glStarN=a.length/4;
+  GL.bindBuffer(GL.ARRAY_BUFFER,glStarBuf);
+  GL.bufferData(GL.ARRAY_BUFFER,new Float32Array(a),GL.DYNAMIC_DRAW);}
+/* How much sky glow survives once the direct beam has gone. Never zero: the
+   umbra is only a couple of hundred kilometres across and the air above you is
+   still lit from outside it. This is an adapted brightness, not a photometric
+   one — the true ratio at totality is nearer one part in ten thousand, which on
+   a screen with no dark adaptation behind it would just be black. */
+function ambOf(o){
+  if(o<0.94)return 0.0;
+  const x=Math.min(1,(o-0.94)/0.06);
+  return 0.16*x*x;}
+/* Preetham's zenith luminance, on the CPU, purely as a reference level */
+function zenLum(T,sunAlt){
+  const tS=Math.max(0,Math.min(Math.PI/2-0.02,(90-sunAlt)*RAD));
+  const chi=(4/9-T/120)*(Math.PI-2*tS);
+  return Math.max(0.05,(4.0453*T-4.9710)*Math.tan(chi)-0.2155*T+2.4192);}
+/* Exposure. A real scene here runs from full noon to the inside of the umbra,
+   some four orders of magnitude, and a fixed exposure can only get one of them
+   right. This is the eye adapting — but deliberately only part of the way, since
+   watching the light go is the entire point of standing here. */
+function expOf(L){
+  const ref=Math.max(0.05,zenLum(2.6,L.S.alt)*Math.max(1-L.obsc,ambOf(L.obsc)*0.9));
+  return 0.30/Math.pow(ref,0.62);}
+/* ---------- terrain ----------
+
+   The one thing on this page that is fetched while it runs. Elevation comes from
+   the AWS terrain tiles, which are open, need no key and send a permissive CORS
+   header, in Mapzen's terrarium encoding: height in metres packed across the
+   three colour channels as (R*256 + G + B/256) - 32768.
+
+   The mesh is polar rather than square — rings of increasing spacing out to a
+   hundred-odd kilometres, on 256 spokes. That puts the detail where the eye is,
+   gives every ring a natural level of detail, and matches the shape of the
+   problem, which is a horizon seen from one fixed point.
+
+   Everything degrades: no network, an old browser, a tile that will not load,
+   and you get the flat horizon back with nothing broken. */
+let terrHost="https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
+const TERRAIN_URL=(z,x,y)=>terrHost+"/"+z+"/"+x+"/"+y+".png";
+const TERRAIN_CREDIT="Terrain: AWS Terrain Tiles / Mapzen";
+/* zoom, and how many tiles either side of the middle one to pull at that zoom */
+const TZ=[[12,1],[9,1],[6,1]];
+const TILES=new Map();
+let terrOn=true,terrMesh=null,terrKey="",terrBusy=0,terrWant=0,terrBuf=null,terrNrm=null,
+    terrIdx=null,terrHgt=null,terrN=0,glTerr=null,terrDec=null;
+const tileX=(lon,z)=>(lon+180)/360*Math.pow(2,z);
+const tileY=(lat,z)=>{const r=lat*RAD;
+  return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);};
+function tileGet(z,x,y,done){
+  const n=1<<z;
+  x=((x%n)+n)%n;
+  if(y<0||y>=n)return null;
+  const k=z+"/"+x+"/"+y;
+  let t=TILES.get(k);
+  if(t)return t;
+  t={h:null,fail:false};TILES.set(k,t);
+  terrWant++;terrBusy++;
+  const img=new Image();
+  img.crossOrigin="anonymous";
+  img.onload=()=>{
+    try{
+      if(!terrDec){terrDec=document.createElement("canvas");terrDec.width=terrDec.height=256;}
+      const cx=terrDec.getContext("2d",{willReadFrequently:true});
+      cx.clearRect(0,0,256,256);cx.drawImage(img,0,0,256,256);
+      const d=cx.getImageData(0,0,256,256).data,a=new Float32Array(256*256);
+      for(let i=0,j=0;i<a.length;i++,j+=4)
+        a[i]=(d[j]*256+d[j+1]+d[j+2]/256)-32768;
+      t.h=a;
+    }catch(err){t.fail=true;}
+    terrBusy--;terrDone();};
+  img.onerror=()=>{t.fail=true;terrBusy--;terrDone();};
+  img.src=TERRAIN_URL(z,x,y);
+  return t;}
+let terrTimer=null;
+function terrDone(){
+  /* rebuild as tiles land, so the horizon fills in rather than arriving all at
+     once — but coalesced, since a rebuild costs more than a decode */
+  if(terrTimer)return;
+  terrTimer=setTimeout(()=>{terrTimer=null;
+    if(detView==="ground"&&obs){terrMesh=null;drawSky();}
+    syncObs();},180);}
+/* metres above the ellipsoid at a place, from the sharpest tile that has it */
+function elevAt(lon,lat){
+  for(const[z]of TZ){
+    const fx=tileX(lon,z),fy=tileY(lat,z);
+    const n=1<<z,tx=((Math.floor(fx)%n)+n)%n,ty=Math.floor(fy);
+    if(ty<0||ty>=n)continue;
+    const t=TILES.get(z+"/"+tx+"/"+ty);
+    if(!t||!t.h)continue;
+    /* bilinear, so the mesh does not come out in steps */
+    const px=(fx-Math.floor(fx))*256,py=(fy-Math.floor(fy))*256;
+    const x0=Math.min(255,Math.max(0,Math.floor(px))),y0=Math.min(255,Math.max(0,Math.floor(py)));
+    const x1=Math.min(255,x0+1),y1=Math.min(255,y0+1);
+    const sx=px-x0,sy=py-y0,H=t.h;
+    return H[y0*256+x0]*(1-sx)*(1-sy)+H[y0*256+x1]*sx*(1-sy)
+          +H[y1*256+x0]*(1-sx)*sy+H[y1*256+x1]*sx*sy;}
+  return null;}
+function terrFetch(lon,lat){
+  for(const[z,rad]of TZ){
+    const cx=Math.floor(tileX(lon,z)),cy=Math.floor(tileY(lat,z));
+    for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++)
+      tileGet(z,cx+dx,cy+dy);}}
+/* Rings out to 140 km, spaced so the near ground gets the vertices. Earth's
+   curvature drops the far ground away by d^2/2R, using the refracted radius —
+   at 100 km that is nearly 700 m, which is why distant ranges stand only partly
+   above the horizon. */
+const TRINGS=104,TSPOKE=256,TFAR=140000,REFR=1.15;
+function buildTerrain(){
+  const h0=elevAt(obs[0],obs[1]);
+  if(h0===null)return null;
+  const R=6371000*REFR,eye=1.7;
+  const pos=new Float32Array(TSPOKE*TRINGS*3),nrm=new Float32Array(TSPOKE*TRINGS*3);
+  const hs=new Float32Array(TSPOKE*TRINGS);
+  const la=obs[1]*RAD,coslat=Math.cos(la);
+  for(let r=0;r<TRINGS;r++){
+    /* geometric spacing: a stride at your feet, kilometres at the skyline */
+    const d=1.5*Math.pow(TFAR/1.5,r/(TRINGS-1));
+    const drop=d*d/(2*R);
+    for(let s=0;s<TSPOKE;s++){
+      const az=s/TSPOKE*2*Math.PI;
+      const dn=d*Math.cos(az),de=d*Math.sin(az);
+      const lat2=obs[1]+dn/111320,lon2=obs[0]+de/(111320*Math.max(0.05,coslat));
+      let hv=elevAt(lon2,lat2);
+      if(hv===null)hv=h0;
+      const i=(r*TSPOKE+s);
+      hs[i]=hv;
+      pos[i*3]=de;pos[i*3+1]=dn;pos[i*3+2]=hv-h0-drop-eye;}}
+  /* normals by central difference on the polar grid */
+  for(let r=0;r<TRINGS;r++)for(let s=0;s<TSPOKE;s++){
+    const i=r*TSPOKE+s;
+    const a=r>0?(r-1)*TSPOKE+s:i,b=r<TRINGS-1?(r+1)*TSPOKE+s:i;
+    const c=r*TSPOKE+((s+TSPOKE-1)%TSPOKE),e=r*TSPOKE+((s+1)%TSPOKE);
+    const u=[pos[b*3]-pos[a*3],pos[b*3+1]-pos[a*3+1],pos[b*3+2]-pos[a*3+2]];
+    const v=[pos[e*3]-pos[c*3],pos[e*3+1]-pos[c*3+1],pos[e*3+2]-pos[c*3+2]];
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    if(n[2]<0)n=[-n[0],-n[1],-n[2]];
+    const m=Math.hypot(n[0],n[1],n[2])||1;
+    nrm[i*3]=n[0]/m;nrm[i*3+1]=n[1]/m;nrm[i*3+2]=n[2]/m;}
+  const idx=[];
+  for(let r=0;r<TRINGS-1;r++)for(let s=0;s<TSPOKE;s++){
+    const s2=(s+1)%TSPOKE;
+    const a=r*TSPOKE+s,b=r*TSPOKE+s2,c=(r+1)*TSPOKE+s,d2=(r+1)*TSPOKE+s2;
+    idx.push(a,c,b,b,c,d2);}
+  return{pos:pos,nrm:nrm,hs:hs,idx:new Uint16Array(idx),h0:h0};}
+const TERR_VS=`attribute vec3 aPos;attribute vec3 aNrm;attribute float aH;
+uniform vec3 uRight,uUp,uFwd;uniform float uK;uniform vec2 uRes;
+varying vec3 vN;varying float vD,vH,vC;
+void main(){
+  float len=length(aPos);
+  vec3 d=aPos/max(len,1.0);
+  float c=dot(d,uFwd);
+  vec2 pp=vec2(dot(d,uRight),dot(d,uUp));
+  float l=length(pp);
+  float th=acos(clamp(c,-1.0,1.0));
+  vec2 px=((l<1e-6)?vec2(0.0):pp/l*(2.0*tan(min(th,1.54)*0.5)))*uK;
+  /* depth grows with the log of distance, so near ground hides far ground */
+  float z=clamp(log(max(len,1.0))/12.5,0.0,1.0);
+  gl_Position=vec4(px/(0.5*uRes),z*2.0-1.0,1.0);
+  vN=aNrm;vD=len;vH=aH;vC=c;}`;
+const TERR_FS=`precision highp float;
+varying vec3 vN;varying float vD,vH,vC;
+uniform vec3 uSunDir,uHaze,uAmbC;uniform float uObsc,uExp,uAmb,uSunUp;
+void main(){
+  /* ground behind you would otherwise be flung right across the frame by a
+     projection that only makes sense forwards */
+  if(vC<0.02)discard;
+  vec3 n=normalize(vN);
+  float lam=max(dot(n,uSunDir),0.0);
+  /* the ground goes out with the Sun: direct light cut by obscuration, then
+     whatever the sky still throws down */
+  float direct=(1.0-uObsc)*max(uSunUp,0.0);
+  float sky=0.16+0.55*max(n.z,0.0);
+  vec3 rock=(vH<0.5)?vec3(0.030,0.055,0.085):mix(vec3(0.085,0.098,0.062),
+       vec3(0.30,0.30,0.31),clamp((vH-900.0)/2400.0,0.0,1.0));
+  vec3 c=rock*(lam*direct*11.0+sky*(0.30+uAmb*14.0)*(0.20+0.80*direct));
+  /* aerial perspective: distance mixes the ground into the sky behind it */
+  float f=1.0-exp(-vD/30000.0);
+  c=mix(c,uHaze,f*0.99);
+  c*=uExp;
+  float L=dot(c,vec3(0.2126,0.7152,0.0722));
+  c*=(L>1e-6)?(L/(1.0+L))/L:0.0;
+  gl_FragColor=vec4(pow(max(c,0.0),vec3(1.0/2.2)),1.0);}`;
+function drawTerrain(gl,c,L,W,H,dpr){
+  if(!terrOn||!obs)return false;
+  const key=obs[0].toFixed(4)+":"+obs[1].toFixed(4);
+  if(key!==terrKey){terrKey=key;terrMesh=null;terrFetch(obs[0],obs[1]);}
+  if(!terrMesh){
+    terrMesh=buildTerrain();
+    if(!terrMesh)return false;
+    if(!glTerr)glTerr=glLink(gl,TERR_VS,TERR_FS);
+    if(!terrBuf){terrBuf=gl.createBuffer();terrNrm=gl.createBuffer();
+      terrIdx=gl.createBuffer();terrHgt=gl.createBuffer();}
+    gl.bindBuffer(gl.ARRAY_BUFFER,terrBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,terrMesh.pos,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,terrNrm);
+    gl.bufferData(gl.ARRAY_BUFFER,terrMesh.nrm,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,terrHgt);
+    gl.bufferData(gl.ARRAY_BUFFER,terrMesh.hs,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,terrIdx);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,terrMesh.idx,gl.STATIC_DRAW);
+    terrN=terrMesh.idx.length;}
+  if(!terrN)return false;
+  const p=glTerr;
+  gl.useProgram(p);
+  gl.bindBuffer(gl.ARRAY_BUFFER,terrBuf);
+  gl.enableVertexAttribArray(p.a.aPos);gl.vertexAttribPointer(p.a.aPos,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,terrNrm);
+  gl.enableVertexAttribArray(p.a.aNrm);gl.vertexAttribPointer(p.a.aNrm,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,terrHgt);
+  gl.enableVertexAttribArray(p.a.aH);gl.vertexAttribPointer(p.a.aH,1,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,terrIdx);
+  gl.uniform2f(p.u.uRes,W,H);gl.uniform1f(p.u.uK,c.k*dpr);
+  gl.uniform3fv(p.u.uRight,c.r);gl.uniform3fv(p.u.uUp,c.u);gl.uniform3fv(p.u.uFwd,c.f);
+  gl.uniform3fv(p.u.uSunDir,L.hS);
+  /* the haze the far ground fades into is the sky just above the horizon */
+  const dim=(1-L.obsc),amb=ambOf(L.obsc);
+  const hz=[0.30+0.9*dim+amb*3.0,0.36+1.05*dim+amb*1.4,0.46+1.35*dim+amb*0.8];
+  gl.uniform3fv(p.u.uHaze,new Float32Array(hz));
+  gl.uniform3fv(p.u.uAmbC,new Float32Array([0.34,0.46,0.66]));
+  gl.uniform1f(p.u.uObsc,L.obsc);gl.uniform1f(p.u.uExp,expOf(L));
+  gl.uniform1f(p.u.uAmb,amb);
+  gl.uniform1f(p.u.uSunUp,Math.max(0,Math.min(1,(L.S.alt+3)/6)));
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+  gl.drawElements(gl.TRIANGLES,terrN,gl.UNSIGNED_SHORT,0);
+  gl.disable(gl.DEPTH_TEST);
+  return true;}
+function drawGL(L,jd,w,h,dpr){
+  const gl=GL;
+  const W=Math.round(w*dpr),H=Math.round(h*dpr);
+  if(sky3d.width!==W||sky3d.height!==H){sky3d.width=W;sky3d.height=H;}
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const c=skyCam(w,h);
+  const k=c.k*dpr;
+  /* the sliver of Sun still showing, which is what the glare hangs off */
+  let fl=L.hS,fi=0;
+  if(L.obsc>0&&!L.tot){
+    const d=[L.hS[0]-L.hM[0],L.hS[1]-L.hM[1],L.hS[2]-L.hM[2]];
+    const n=Math.hypot(d[0],d[1],d[2]);
+    if(n>1e-9){const s=Math.min(L.rM,L.sep)*RAD;
+      fl=[L.hS[0]+d[0]/n*s*0.9,L.hS[1]+d[1]/n*s*0.9,L.hS[2]+d[2]/n*s*0.9];
+      const m=Math.hypot(fl[0],fl[1],fl[2]);fl=[fl[0]/m,fl[1]/m,fl[2]/m];}
+    fi=Math.pow(1-L.obsc,0.55);}
+  else if(L.obsc<=0)fi=1;
+  const p=glProg;
+  gl.useProgram(p);
+  gl.bindBuffer(gl.ARRAY_BUFFER,glBuf);
+  gl.enableVertexAttribArray(p.a.aPos);
+  gl.vertexAttribPointer(p.a.aPos,2,gl.FLOAT,false,0,0);
+  gl.uniform2f(p.u.uRes,W,H);gl.uniform1f(p.u.uK,k);
+  gl.uniform3fv(p.u.uRight,c.r);gl.uniform3fv(p.u.uUp,c.u);gl.uniform3fv(p.u.uFwd,c.f);
+  gl.uniform3fv(p.u.uSun,L.hS);gl.uniform3fv(p.u.uMoon,L.hM);gl.uniform3fv(p.u.uFlare,fl);
+  gl.uniform1f(p.u.uSunR,L.rS*RAD);gl.uniform1f(p.u.uMoonR,L.rM*RAD);
+  gl.uniform1f(p.u.uObsc,L.obsc);gl.uniform1f(p.u.uTurb,2.6);
+  gl.uniform1f(p.u.uAmb,ambOf(L.obsc));gl.uniform1f(p.u.uExp,expOf(L));
+  gl.uniform1f(p.u.uFlareI,fi);gl.uniform1f(p.u.uSeed,(sel?sel.i%97:0)/97);
+  gl.uniform1f(p.u.uNight,1);
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  /* stars, over the sky and under the ground */
+  const dim=dimOf(L.obsc)*Math.max(0.02,Math.min(1,(L.S.alt+12)/14));
+  const sa=Math.max(0,Math.min(1,(0.02-dim)/0.018));
+  if(sa>0.01){
+    glStars(L,jd);
+    if(glStarN){
+      const q=glStar;
+      gl.useProgram(q);
+      gl.bindBuffer(gl.ARRAY_BUFFER,glStarBuf);
+      gl.enableVertexAttribArray(q.a.aDir);
+      gl.vertexAttribPointer(q.a.aDir,3,gl.FLOAT,false,16,0);
+      gl.enableVertexAttribArray(q.a.aMag);
+      gl.vertexAttribPointer(q.a.aMag,1,gl.FLOAT,false,16,12);
+      gl.uniform2f(q.u.uRes,W,H);gl.uniform1f(q.u.uK,k);gl.uniform1f(q.u.uDpr,dpr);
+      gl.uniform3fv(q.u.uRight,c.r);gl.uniform3fv(q.u.uUp,c.u);gl.uniform3fv(q.u.uFwd,c.f);
+      gl.uniform1f(q.u.uAlpha,sa);
+      gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+      gl.drawArrays(gl.POINTS,0,glStarN);
+      gl.disable(gl.BLEND);}}
+  /* the ground last, over the stars it hides */
+  return drawTerrain(gl,c,L,W,H,dpr);
+}
+function drawSky(){
+  if(detView!=="ground")return;
+  const {w,h}=sizeSky();if(!w)return;
+  const e=sel;
+  if(!obs||!e){sky3d.style.display="none";skyC.classList.remove("gl");
+    sc.fillStyle="#04070c";sc.fillRect(0,0,w,h);
+    sc.fillStyle="#5d6b80";sc.font='10.5px "IBM Plex Mono",monospace';
+    sc.textAlign="center";sc.textBaseline="middle";
+    sc.fillText(e?"Tap the globe to stand somewhere":"Select an eclipse first",w/2,h/2);
+    return;}
+  const jd=tJD(e),L=local(jd,obs[1],obs[0]);
+  /* The Sun crosses fifteen degrees of sky an hour, so at anything past a few
+     degrees of field it would leave the frame before the Moon had taken a bite.
+     The view follows it until you drag, and Find the Sun gives it back. */
+  if(vTrack){vAz=L.S.az;vAlt=Math.max(-8,Math.min(80,L.S.alt));}
+  const c=skyCam(w,h);
+  const dim=dimOf(L.obsc),cols=skyCols(L.S.alt,dim);
+  const useGL=glInit();
+  let hasTerr=false;
+  sky3d.style.display=useGL?"block":"none";
+  skyC.classList.toggle("gl",useGL);
+  if(useGL){
+    hasTerr=drawGL(L,jd,w,h,Math.min(devicePixelRatio||1,2));
+    sc.clearRect(0,0,w,h);
+  }else{
+  /* Sky, banded by the altitude each row is actually looking at rather than by
+     how far down the canvas it is — so zooming in on the Sun gives one flat
+     colour instead of a whole day's worth of gradient across two degrees. */
+  const gsky=sc.createLinearGradient(0,0,0,h);
+  for(let j=0;j<=6;j++){
+    const v=unSky(w/2,j/6*h,c);
+    gsky.addColorStop(j/6,rgb(skyRGB(Math.asin(clamp1(v[2]))/RAD,cols,L.obsc)));}
+  sc.fillStyle=gsky;sc.fillRect(0,0,w,h);
+  /* stars, once it is dark enough for them to be there at all */
+  const sa=Math.max(0,Math.min(1,(0.02-dim)/0.018));
+  if(sa>0.01){const T=(jd-2451545.0)/36525;
+    sc.globalAlpha=sa;
+    for(const st of STARS){const pd=precess(st[0]*15,st[1],T);
+      /* through the same local basis the Sun and Moon went through */
+      const v=L.toH([cosD(pd[1])*cosD(pd[0]),cosD(pd[1])*sinD(pd[0]),sinD(pd[1])]);
+      if(v[2]<-0.02)continue;
+      const p=pjSky(v,c);if(p.v<=0)continue;
+      const r=Math.max(0.6,1.9-st[2]*0.42);
+      sc.fillStyle="#e8eef7";sc.beginPath();sc.arc(p.x,p.y,r,0,6.2832);sc.fill();}
+    sc.globalAlpha=1;}
+  }
+  /* faint altitude and azimuth grid, so a spin still feels anchored. Only in the
+     flat renderer — over a real sky it reads as scaffolding. */
+  if(!useGL){
+  sc.strokeStyle="rgba(255,255,255,.07)";sc.lineWidth=1;
+  for(let az=0;az<360;az+=30){sc.beginPath();let up=false;
+    for(let al=0;al<=88;al+=2){const p=pjSky(altaz(al,az),c);
+      if(p.v<=0.02){up=false;continue;}up?sc.lineTo(p.x,p.y):sc.moveTo(p.x,p.y);up=true;}
+    sc.stroke();}
+  for(const al of[30,60]){sc.beginPath();let up=false;
+    for(let az=0;az<=360;az+=3){const p=pjSky(altaz(al,az),c);
+      if(p.v<=0.02){up=false;continue;}up?sc.lineTo(p.x,p.y):sc.moveTo(p.x,p.y);up=true;}
+    sc.stroke();}
+  }
+  /* Sun and Moon. The bloom is drawn first so the Moon can cut into it. */
+  const sp=pjSky(L.hS,c);
+  const rpx=(p,deg)=>{const q=pjSky(rot(p,deg),c);return Math.hypot(q.x-sp.x,q.y-sp.y);};
+  const rS=Math.max(1.2,rpx(L.hS,L.rS)),ratio=L.rM/L.rS;
+  const mp=pjSky(L.hM,c),rM=Math.max(1.2,rS*ratio);
+  if(!useGL){
+  if(sp.v>0){
+    const vis=1-L.obsc;
+    if(!L.tot){
+      const bl=rS*(3.2+9*vis),g=sc.createRadialGradient(sp.x,sp.y,rS*0.7,sp.x,sp.y,bl);
+      g.addColorStop(0,"rgba(255,248,224,"+(0.34*Math.pow(vis,0.5)+0.05)+")");
+      g.addColorStop(1,"rgba(255,248,224,0)");
+      sc.fillStyle=g;sc.beginPath();sc.arc(sp.x,sp.y,bl,0,6.2832);sc.fill();}
+    sc.fillStyle="#fffdf2";sc.beginPath();sc.arc(sp.x,sp.y,rS,0,6.2832);sc.fill();}
+  if(L.tot&&sp.v>0){
+    /* corona: a soft halo with streamers, longest either side of the equator */
+    const seed=e.i;
+    const g=sc.createRadialGradient(mp.x,mp.y,rM*0.99,mp.x,mp.y,rM*3.4);
+    g.addColorStop(0,"rgba(226,232,240,.62)");g.addColorStop(0.25,"rgba(200,212,228,.26)");
+    g.addColorStop(1,"rgba(180,198,220,0)");
+    sc.fillStyle=g;sc.beginPath();sc.arc(mp.x,mp.y,rM*3.4,0,6.2832);sc.fill();
+    sc.save();sc.globalCompositeOperation="lighter";
+    for(let i=0;i<120;i++){const a=i/120*6.2832+rnd(seed+i)*0.05;
+      const len=rM*(1.25+2.4*Math.pow(rnd(seed*3+i),1.7)*(0.45+0.55*Math.abs(Math.cos(a))));
+      const g2=sc.createLinearGradient(mp.x+Math.cos(a)*rM,mp.y+Math.sin(a)*rM,
+        mp.x+Math.cos(a)*len,mp.y+Math.sin(a)*len);
+      g2.addColorStop(0,"rgba(228,236,246,.30)");g2.addColorStop(1,"rgba(228,236,246,0)");
+      sc.strokeStyle=g2;sc.lineWidth=Math.max(0.8,rM*0.10);
+      sc.beginPath();sc.moveTo(mp.x+Math.cos(a)*rM*1.0,mp.y+Math.sin(a)*rM*1.0);
+      sc.lineTo(mp.x+Math.cos(a)*len,mp.y+Math.sin(a)*len);sc.stroke();}
+    sc.restore();
+    /* chromosphere and a couple of prominences at the limb */
+    sc.strokeStyle="rgba(226,86,74,.5)";sc.lineWidth=Math.max(1,rM*0.05);
+    sc.beginPath();sc.arc(mp.x,mp.y,rM*1.012,0,6.2832);sc.stroke();
+    for(let i=0;i<4;i++){const a=rnd(seed*7+i)*6.2832;
+      sc.strokeStyle="rgba(232,96,80,.75)";sc.lineWidth=Math.max(1.2,rM*0.08);
+      sc.beginPath();sc.arc(mp.x,mp.y,rM*1.03,a,a+0.10+rnd(seed*11+i)*0.13);sc.stroke();}}
+  if(mp.v>0&&L.sep<L.rS+L.rM){
+    /* The Moon in daylight is invisible: what you see is the bite it takes out
+       of the Sun, so the disc is clipped to the Sun's. Under totality it is the
+       other way round — the Moon is the larger disc, silhouetted on the corona. */
+    sc.save();
+    if(!L.tot){sc.beginPath();sc.arc(sp.x,sp.y,rS,0,6.2832);sc.clip();}
+    sc.fillStyle=L.tot?"#05070c":"#080b12";
+    sc.beginPath();sc.arc(mp.x,mp.y,rM,0,6.2832);sc.fill();
+    sc.restore();
+    /* the diamond ring: the last unblocked scrap of photosphere, just before and
+       just after second and third contact */
+    const gap=L.sep-Math.abs(L.rM-L.rS);
+    if(!L.tot&&!L.ann&&L.mag>0.985&&gap<L.rS*0.5&&gap>0){
+      const a=Math.atan2(sp.y-mp.y,sp.x-mp.x);
+      const bx=mp.x+Math.cos(a)*rM,by=mp.y+Math.sin(a)*rM;
+      const br=Math.max(2,rS*0.5*(1-gap/(L.rS*0.5)));
+      const g=sc.createRadialGradient(bx,by,0,bx,by,br*7);
+      g.addColorStop(0,"rgba(255,255,245,.95)");g.addColorStop(0.12,"rgba(255,250,225,.5)");
+      g.addColorStop(1,"rgba(255,250,225,0)");
+      sc.fillStyle=g;sc.beginPath();sc.arc(bx,by,br*7,0,6.2832);sc.fill();
+      sc.fillStyle="#fffef8";sc.beginPath();sc.arc(bx,by,br,0,6.2832);sc.fill();}}
+  }
+  /* The ground. Stereographic turns the horizon into a single closed curve, and
+     the ground is whichever side of it the zenith is not on — outside it when you
+     are looking up, inside it when you are looking down at your feet. */
+  const hp=[];
+  for(let az=0;az<=360;az+=1)hp.push(pjSky(altaz(0,az),c));
+  const zp=pjSky([0,0,1],c);
+  let skyIn=false;
+  for(let i=0,j=hp.length-1;i<hp.length;j=i++)
+    if((hp[i].y>zp.y)!==(hp[j].y>zp.y)&&
+       zp.x<(hp[j].x-hp[i].x)*(zp.y-hp[i].y)/(hp[j].y-hp[i].y)+hp[i].x)skyIn=!skyIn;
+  /* real ground draws its own horizon, so the flat one steps aside */
+  if(!hasTerr){
+  sc.beginPath();
+  if(skyIn)sc.rect(-1e5,-1e5,2e5,2e5);
+  hp.forEach((p,i)=>i?sc.lineTo(p.x,p.y):sc.moveTo(p.x,p.y));
+  sc.closePath();
+  const gg=sc.createLinearGradient(0,c.cy,0,h);
+  gg.addColorStop(0,"#0e1219");gg.addColorStop(1,"#05070b");
+  sc.fillStyle=gg;sc.fill(skyIn?"evenodd":"nonzero");
+  sc.strokeStyle="rgba(140,160,185,.35)";sc.lineWidth=1;
+  sc.beginPath();{let up=false;
+    for(let i=0;i<hp.length;i++){
+      if(hp[i].v<=0.02){up=false;continue;}
+      up?sc.lineTo(hp[i].x,hp[i].y):sc.moveTo(hp[i].x,hp[i].y);up=true;}}
+  sc.stroke();
+  }
+  /* cardinal points on the horizon */
+  sc.font='9px "IBM Plex Mono",monospace';sc.textAlign="center";sc.textBaseline="top";
+  for(const[az,nm]of[[0,"N"],[45,"NE"],[90,"E"],[135,"SE"],[180,"S"],[225,"SW"],
+                     [270,"W"],[315,"NW"]]){
+    const p=pjSky(altaz(0,az),c);if(p.v<=0.05)continue;
+    if(p.x<-10||p.x>w+10)continue;
+    sc.fillStyle=az%90?"#4d5c72":"#8496ad";sc.fillText(nm,p.x,p.y+4);}
+  /* readouts */
+  sc.font='9px "IBM Plex Mono",monospace';sc.textAlign="left";sc.textBaseline="top";
+  sc.fillStyle="#8496ad";
+  const phase=L.S.alt<UPALT?"SUN BELOW THE HORIZON":
+    L.tot?"TOTALITY":L.ann?"ANNULAR":L.obsc>0?"PARTIAL":
+    (L.sep<8?"about to begin":"no eclipse here");
+  sc.fillText(phase,8,8);
+  sc.fillStyle="#5d6b80";
+  sc.fillText("sun "+L.S.alt.toFixed(1)+"° alt  "+L.S.az.toFixed(0)+"° az",8,20);
+  sc.fillText(L.obsc>0?"obscuration "+(L.obsc*100).toFixed(1)+"%  ·  magnitude "
+    +L.mag.toFixed(3):"magnitude 0",8,32);
+  if(L.S.alt<0){sc.fillStyle="#7d8ea6";sc.textAlign="center";
+    sc.fillText("the Sun is below the horizon here",w/2,h-58);}
+  sc.textAlign="right";sc.fillStyle="#3f4c5e";
+  sc.fillText((vFov<3?vFov.toFixed(1):Math.round(vFov))+"° field"
+    +(vTrack?" · tracking":""),w-8,8);
+  /* if you have looked away, say which way the Sun went */
+  if(!vTrack&&(sp.v<=0||sp.x<0||sp.x>w||sp.y<0||sp.y>h)){
+    /* straight off the view basis, so it points the right way even when the Sun
+       is behind you and the projection has given up */
+    const a=Math.atan2(-vdot(L.hS,c.u),vdot(L.hS,c.r));
+    const rr=Math.min(w,h)*0.36;
+    const ax=w/2+Math.cos(a)*rr,ay=h/2+Math.sin(a)*rr;
+    sc.fillStyle="rgba(244,241,230,.55)";sc.textAlign="center";sc.textBaseline="middle";
+    sc.save();sc.translate(ax,ay);sc.rotate(a);
+    sc.beginPath();sc.moveTo(9,0);sc.lineTo(-4,6);sc.lineTo(-4,-6);sc.closePath();sc.fill();
+    sc.restore();
+    sc.fillText("sun",ax-Math.cos(a)*15,ay-Math.sin(a)*15);}
+}
+/* rotate a unit vector away from another by an angle, for measuring disc radii */
+function rot(v,deg){let a=Math.abs(v[2])<0.9?[-v[1],v[0],0]:[0,-v[2],v[1]];
+  const n=Math.hypot(a[0],a[1],a[2]);a=[a[0]/n,a[1]/n,a[2]/n];
+  const c=cosD(deg),s=sinD(deg);
+  return[v[0]*c+a[0]*s,v[1]*c+a[1]*s,v[2]*c+a[2]*s];}
+/* First to fourth contact where you are standing, plus the deepest moment.
+
+   An eclipse you cannot see is not an eclipse: the Sun setting mid-event is as
+   real an end to it as fourth contact, and plenty of places catch only part of
+   one before the Sun goes down. So every phase here is bounded by the horizon as
+   well as by the discs, and the contacts say which of the two stopped them.
+   Scanned on a coarse grid and bisected, cheap enough to redo on every step of
+   the pin. Cached against the eclipse and the spot. */
+const UPALT=-0.833;     /* refraction lifts the disc about its own width */
+function circum(e,lon,lat){
+  const key=e.i+":"+lon.toFixed(3)+":"+lat.toFixed(3);
+  if(circ&&circ.key===key)return circ;
+  const w=win(e),N=200,f=[];
+  const at=t=>{const L=local(w.g+t/1440,lat,lon);
+    return{t:t,out:L.sep-(L.rS+L.rM),in:L.sep-Math.abs(L.rM-L.rS),
+      o:L.obsc,alt:L.S.alt,L:L};};
+  for(let i=0;i<=N;i++)f.push(at(w.a+(w.b-w.a)*i/N));
+  const up=s=>s.alt>UPALT;
+  /* deepest sample with the Sun actually up, then one parabolic step */
+  let bi=-1;
+  for(let i=0;i<=N;i++)if(up(f[i])&&(bi<0||f[i].o>f[bi].o))bi=i;
+  const anyBelow=f.some(s=>s.o>0);
+  if(bi<0||f[bi].o<=0)
+    return circ={key:key,max:0,maxO:0,alt:bi<0?-90:f[bi].alt,
+      down:anyBelow,tot:false,ann:false,c1:null,c4:null,c2:null,c3:null};
+  let tmax=f[bi].t;
+  if(bi>0&&bi<N&&up(f[bi-1])&&up(f[bi+1])){
+    const d=f[bi-1].o-2*f[bi].o+f[bi+1].o;
+    if(d<0)tmax+=0.5*(f[bi-1].o-f[bi+1].o)/d*(w.b-w.a)/N;}
+  const peak=at(tmax);
+  /* walk out from the peak to the first sample past a contact or past sunset,
+     then bisect that interval on whichever of the two it was */
+  const edge=(fld,dir)=>{
+    const gone=s=>s[fld]>0||!up(s);
+    let a=null,b=null;
+    for(let i=bi;i>=0&&i<=N;i+=dir)
+      if(gone(f[i])){a=f[i].t;b=(i===bi?tmax:f[i-dir].t);break;}
+    if(a===null)return{t:dir<0?w.a:w.b,hz:false,clip:true};
+    for(let k=0;k<30;k++){const m=(a+b)/2;gone(at(m))?a=m:b=m;}
+    const t=(a+b)/2;
+    return{t:t,hz:!up(at(t+dir*1e-4)),clip:false};};
+  const central=peak.L.tot||peak.L.ann;
+  return circ={key:key,max:tmax,maxO:peak.o,alt:peak.alt,down:false,
+    tot:peak.L.tot,ann:peak.L.ann,
+    c1:edge("out",-1),c4:edge("out",1),
+    c2:central?edge("in",-1):null,c3:central?edge("in",1):null};}
+/* ---------- clock, live and otherwise ---------- */
+const TPLAY=42000;   /* one whole eclipse in about forty seconds, whatever its length */
+const nowJD=()=>Date.now()/86400000+2440587.5;
+const utOf=jd=>{const c=calOf(jd);return utf(Math.round(c.mins)%1440);};
 function setTLab(){const e=sel;
-  if(!e||!e.p){tLab.textContent="--:-- UT";tDur.textContent="";return;}
-  tLab.textContent=utf(Math.round(tMin(e)));
-  const d=Math.round(durAt(e.p,tFrac));
+  if(!e){tLab.textContent="--:-- UT";tDur.textContent="";return;}
+  const jd=tJD(e);
+  tLab.textContent=utOf(jd);
+  if(detView==="ground"&&obs){const L=local(jd,obs[1],obs[0]);
+    tDur.textContent=L.obsc>0?(L.obsc*100).toFixed(1)+"% covered":"—";return;}
+  const uf=tUF(e);
+  const d=e.p&&uf>=0&&uf<=1?Math.round(durAt(e.p,uf)):0;
   tDur.textContent=d>0?fd(d)+" "+(e.t===1?"annular":"total")
-    +(tTimer?"  ×"+Math.round(e.p.span*60/(TPLAY/1000)):""):"—";}
+    +(tTimer?"  ×"+Math.round((win(e).b-win(e).a)*60/(TPLAY/1000)):""):"—";}
+function repaint(){if(detView==="globe")drawGlobe();
+  else if(detView==="ground")drawSky();else drawMap(sel);}
 function stopT(){if(tTimer){cancelAnimationFrame(tTimer);tTimer=null;
   tPlay.classList.remove("on");tPlay.innerHTML="&#9654;";setTLab();}}
 tPlay.onclick=()=>{if(tTimer){stopT();return;}
-  if(!sel||!sel.p)return;
+  if(!sel)return;setLive(false);
   tPlay.classList.add("on");tPlay.innerHTML="&#9646;&#9646;";
   let t0=performance.now()-tFrac*TPLAY;
   const tick=now=>{if(!tTimer)return;
     let f=(now-t0)/TPLAY;
     if(f>=1){f=0;t0=now;}
-    tFrac=f;tSlide.value=Math.round(f*1000);setTLab();drawGlobe();
+    tFrac=f;tSlide.value=Math.round(f*1000);setTLab();repaint();
     tTimer=requestAnimationFrame(tick);};
   tTimer=requestAnimationFrame(tick);};
-tSlide.oninput=()=>{stopT();tFrac=+tSlide.value/1000;setTLab();drawGlobe();};
+tSlide.oninput=()=>{stopT();setLive(false);tFrac=+tSlide.value/1000;setTLab();repaint();};
+/* An eclipse is "live" while the real clock sits inside its window. There is at
+   most one at a time, and for about four hours every six months or so. */
+function liveNow(){
+  const n=nowJD();
+  for(let i=Math.max(0,lo_(nowY)-3);i<Math.min(E.length,lo_(nowY)+3);i++){
+    const e=E[i];
+    if(Math.abs(jdOf(e.ymd[0],e.ymd[1],e.ymd[2],720)-n)>2)continue;
+    const w=win(e);
+    if(n>=w.g+w.a/1440&&n<=w.g+w.b/1440)return e;}
+  return null;}
+function nextEclipse(){const n=nowJD();
+  for(let i=Math.max(0,lo_(nowY)-3);i<E.length;i++){
+    const e=E[i];
+    if(jdOf(e.ymd[0],e.ymd[1],e.ymd[2],1439)>n)return e;}
+  return null;}
+let live=false,liveTimer=null;
+function setLive(on){
+  if(on===live)return;
+  live=on;
+  tLive.classList.toggle("on",on);tLive.setAttribute("aria-pressed",String(on));
+  if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
+  if(!on)return;
+  stopT();
+  const step=()=>{const e=sel;if(!e){setLive(false);return;}
+    const w=win(e),n=nowJD();
+    const f=((n-w.g)*1440-w.a)/(w.b-w.a);
+    if(f<-0.02||f>1.02){setLive(false);syncLive();return;}
+    tFrac=Math.max(0,Math.min(1,f));tSlide.value=Math.round(tFrac*1000);
+    setTLab();repaint();};
+  step();liveTimer=setInterval(step,1000);}
+/* the chip in the masthead: an eclipse happening now, or the next one along */
+function syncLive(){
+  const e=liveNow();
+  liveChip.classList.toggle("live",!!e);
+  if(e){liveChip.innerHTML='<span class="dot"></span>Live &middot; '+TYPES[e.t].toLowerCase()
+      +' eclipse in progress';
+    liveChip.dataset.i=e.i;tLive.disabled=!(sel&&sel.i===e.i);}
+  else{const nx=nextEclipse();
+    tLive.disabled=true;if(live)setLive(false);
+    if(nx){const days=Math.round(jdOf(nx.ymd[0],nx.ymd[1],nx.ymd[2],720)-nowJD());
+      liveChip.textContent="Next: "+dstr(nx)+" · "+days+"d";
+      liveChip.dataset.i=nx.i;}
+    else{liveChip.textContent="";liveChip.dataset.i="";}}}
+liveChip.onclick=()=>{const i=liveChip.dataset.i;
+  if(i==="")return;
+  const e=E[+i];setTab("canon");select(e);
+  view.x0=e.y-1.2;view.x1=e.y+1.2;clampView();fitY();
+  if(liveNow()===e){
+    setLive(true);
+    /* drop you under the shadow, so going live lands on the eclipse itself
+       rather than on an empty horizon */
+    const s=shadowPoint(nowJD());gLon=s[0];gLat=s[1];gZoom=Math.max(gZoom,2.4);
+    setObs(s[0],s[1]);setDetView("ground");}
+  refresh();};
+tLive.onclick=()=>setLive(!live);
 function setDetView(v){detView=v;
   vGlobe.setAttribute("aria-pressed",String(v==="globe"));
+  vGround.setAttribute("aria-pressed",String(v==="ground"));
   vFlat.setAttribute("aria-pressed",String(v==="flat"));
   globeBox.style.display=v==="globe"?"block":"none";
-  tRow.style.display=v==="globe"?"flex":"none";
-  mp.style.display=v==="globe"?"none":"block";
-  gHint.textContent=v==="globe"?"drag to spin · scroll to zoom":"flat overview";
-  if(v==="globe")drawGlobe();else drawMap(sel);}
-vGlobe.onclick=()=>setDetView("globe");vFlat.onclick=()=>setDetView("flat");
+  skyBox.style.display=v==="ground"?"block":"none";
+  obsRow.style.display=v==="ground"?"flex":"none";
+  tRow.style.display=v==="flat"?"none":"flex";
+  mp.style.display=v==="flat"?"block":"none";
+  gHint.textContent=v==="globe"?"drag to spin · tap to stand there"
+    :v==="ground"?"drag to look · W A S D to walk":"flat overview";
+  syncObs();repaint();}
+vGlobe.onclick=()=>setDetView("globe");
+vGround.onclick=()=>setDetView("ground");
+vFlat.onclick=()=>setDetView("flat");
 expand.onclick=()=>{const on=detail.classList.toggle("expanded");
   expand.setAttribute("aria-pressed",String(on));expand.classList.toggle("on",on);
   expand.innerHTML=on?"&#10529;":"&#10530;";
   expand.title=on?"Collapse back to the side panel":"Expand to fill the pane";
-  requestAnimationFrame(()=>{if(detView==="globe")drawGlobe();else drawMap(sel);resize();});};
-/* spin + zoom */
-let gDrag=null,gPts=new Map(),gPinch=null;
+  requestAnimationFrame(()=>{repaint();resize();});};
+/* where you are standing, in words */
+const llStr=(lon,lat)=>Math.abs(lat).toFixed(2)+"°"+(lat<0?"S":"N")+" "
+  +Math.abs(lon).toFixed(2)+"°"+(lon<0?"W":"E");
+function syncObs(){
+  if(!obs){obsPos.textContent="nowhere yet";obsInfo.textContent="";
+    obsClr.disabled=true;return;}
+  obsClr.disabled=false;
+  /* local mean time is the only "clock time" a bare longitude can give you */
+  obsPos.textContent=llStr(obs[0],obs[1]);
+  if(!sel){obsInfo.textContent="";return;}
+  const ci=circum(sel,obs[0],obs[1]),w=win(sel);
+  const at=t=>utOf(w.g+t/1440);
+  if(ci.maxO<=0){obsInfo.innerHTML='<span class="hint">'
+    +(ci.down?"the eclipse happens here, but after the Sun has set"
+             :"nothing of this one reaches here")+'</span>';return;}
+  const bits=['<span class="lbl">Max</span><em>'+(ci.maxO*100).toFixed(1)+'%</em> at '
+    +at(ci.max)];
+  if(ci.c2&&ci.c3)bits.push('<span class="lbl">'+(ci.ann?"Annular":"Total")+'</span><em>'
+    +fd(Math.round((ci.c3.t-ci.c2.t)*60))+'</em> from '+at(ci.c2.t));
+  /* say so when it is the horizon that ends it rather than the Moon */
+  const end=c=>at(c.t)+(c.hz?" (horizon)":"");
+  bits.push('<span class="lbl">Visible</span>'+end(ci.c1)+"–"+end(ci.c4));
+  if(terrOn){const h=elevAt(obs[0],obs[1]);
+    bits.push('<span class="lbl">Ground</span>'+(h===null
+      ?(terrBusy?"loading…":"—")
+      :Math.round(h)+" m"+(terrBusy?" · loading…":"")));}
+  obsInfo.innerHTML=bits.join(' &nbsp;·&nbsp; ');}
+function setObs(lon,lat){obs=[lon,lat];circ=null;
+  faceSun();syncObs();repaint();}
+/* start looking at wherever the Sun is, since that is the point of standing here */
+function faceSun(){vTrack=true;
+  if(!obs||!sel)return;
+  const L=local(tJD(sel),obs[1],obs[0]);
+  vAz=L.S.az;vAlt=Math.max(-8,Math.min(80,L.S.alt));}
+obsClr.onclick=()=>{obs=null;circ=null;syncObs();repaint();};
+/* Terrain is the one thing here that reaches the network. It can be switched
+   off, and the page falls back to a flat horizon with nothing else changed. */
+obsTerr.onclick=()=>{terrOn=!terrOn;
+  obsTerr.classList.toggle("on",terrOn);
+  obsTerr.setAttribute("aria-pressed",String(terrOn));
+  terrMesh=null;terrKey="";syncObs();repaint();};
+obsSun.onclick=()=>{faceSun();vFov=Math.min(vFov,12);drawSky();};
+/* spin + zoom + stand */
+let gDrag=null,gPts=new Map(),gPinch=null,gMoved=false,gPin=false;
 globe.addEventListener("pointerdown",ev=>{gPts.set(ev.pointerId,ev);
-  if(gPts.size===1){globe.setPointerCapture(ev.pointerId);
-    gDrag={x:ev.offsetX,y:ev.offsetY,lon:gLon,lat:gLat};globe.style.cursor="grabbing";}
+  if(gPts.size===1){globe.setPointerCapture(ev.pointerId);gMoved=false;
+    const k=camOf(globeBox.clientWidth||320,gSize||320);
+    gPin=false;
+    if(obs){const s=pj(obs[0],obs[1],k);   /* grabbing the pin walks it instead */
+      if(s.v>0&&Math.hypot(s.x-ev.offsetX,s.y-8-ev.offsetY)<16)gPin=true;}
+    gDrag={x:ev.offsetX,y:ev.offsetY,lon:gLon,lat:gLat};
+    globe.style.cursor="grabbing";}
   else gDrag=null;});
 globe.addEventListener("pointermove",ev=>{
   if(gPts.has(ev.pointerId))gPts.set(ev.pointerId,ev);
   if(gPts.size===2){const[a,b]=[...gPts.values()];
     const dd=Math.hypot(a.offsetX-b.offsetX,a.offsetY-b.offsetY);
     if(gPinch&&dd>0)gZoom=Math.max(.7,Math.min(GZMAX,gZoom*dd/gPinch));
-    gPinch=dd;drawGlobe();return;}
+    gPinch=dd;gMoved=true;drawGlobe();return;}
   if(!gDrag)return;
+  if(Math.abs(ev.offsetX-gDrag.x)+Math.abs(ev.offsetY-gDrag.y)>3)gMoved=true;
+  if(gPin){const k=camOf(globeBox.clientWidth||320,gSize||320);
+    const ll=unpj(ev.offsetX,ev.offsetY,k);
+    if(ll){obs=ll;circ=null;syncObs();drawGlobe();}
+    return;}
   gLon=gDrag.lon-(ev.offsetX-gDrag.x)*.35/gZoom;
   gLat=Math.max(-89,Math.min(89,gDrag.lat+(ev.offsetY-gDrag.y)*.35/gZoom));
   gLon=((gLon+540)%360)-180;drawGlobe();});
 ["pointerup","pointercancel"].forEach(t=>globe.addEventListener(t,ev=>{
+  if(t==="pointerup"&&!gMoved&&gPts.size===1&&!gPin){
+    const k=camOf(globeBox.clientWidth||320,gSize||320);
+    const ll=unpj(ev.offsetX,ev.offsetY,k);
+    if(ll&&sel){const first=!obs;setObs(ll[0],ll[1]);
+      if(first)setDetView("ground");}}
   gPts.delete(ev.pointerId);if(gPts.size<2)gPinch=null;
-  if(gPts.size===0){gDrag=null;globe.style.cursor="grab";}}));
+  if(gPts.size===0){gDrag=null;gPin=false;globe.style.cursor="grab";}}));
 globe.addEventListener("wheel",ev=>{ev.preventDefault();
   gZoom=Math.max(.7,Math.min(GZMAX,gZoom*(ev.deltaY>0?.88:1.136)));drawGlobe();},{passive:false});
-globe.addEventListener("dblclick",()=>{gZoom=1;faceEclipse();drawGlobe();});
 const gZoomBy=f=>{gZoom=Math.max(.7,Math.min(GZMAX,gZoom*f));drawGlobe();};
-gIn.onclick=()=>gZoomBy(1.6);gOut.onclick=()=>gZoomBy(1/1.6);
-gRst.onclick=()=>{gZoom=1;faceEclipse();drawGlobe();};
+gIn.onclick=()=>{detView==="ground"?fovBy(1/1.6):gZoomBy(1.6);};
+gOut.onclick=()=>{detView==="ground"?fovBy(1.6):gZoomBy(1/1.6);};
+gRst.onclick=()=>{if(detView==="ground"){vFov=68;faceSun();drawSky();return;}
+  gZoom=1;faceEclipse();drawGlobe();};
+/* The most-eclipsed spot on Earth at a given moment, as a unit vector.
+
+   Where the axis strikes the globe, that is the umbra. Where it misses, the
+   nearest point of the surface to the axis lies exactly on the terminator — which
+   is why a partial-only eclipse is always seen with the Sun on the horizon. The
+   small step sunward is only to keep that point on the lit side of the line. */
+function deepVec(a){const k=a.g<1?Math.sqrt(1-a.g*a.g):0.03;
+  const v=[a.P[0]-k*a.u[0],a.P[1]-k*a.u[1],a.P[2]-k*a.u[2]];
+  const n=Math.hypot(v[0],v[1],v[2]);
+  return[v[0]/n,v[1]/n,v[2]/n];}
+function shadowPoint(jd){const v=deepVec(axisAt(jd));
+  return[Math.atan2(v[1],v[0])/RAD,Math.asin(clamp1(v[2]))/RAD];}
 function faceEclipse(){if(!sel)return;
-  if(sel.p){const c=trackAt(sel.p,.5);gLon=c[0];gLat=c[1];}
-  else if(sel.pen){gLon=sel.pen.c[0];gLat=sel.pen.c[1];}}
+  const c=sel.p?trackAt(sel.p,.5):shadowPoint(win(sel).g);
+  gLon=c[0];gLat=c[1];}
+/* look around the sky */
+const fovBy=f=>{vFov=Math.max(0.35,Math.min(120,vFov*f));drawSky();};
+let sDrag=null,sPts=new Map(),sPinch=null;
+skyC.addEventListener("pointerdown",ev=>{sPts.set(ev.pointerId,ev);
+  if(sPts.size===1){skyC.setPointerCapture(ev.pointerId);
+    sDrag={x:ev.offsetX,y:ev.offsetY,az:vAz,alt:vAlt};skyC.style.cursor="grabbing";}
+  else sDrag=null;});
+skyC.addEventListener("pointermove",ev=>{
+  if(sPts.has(ev.pointerId))sPts.set(ev.pointerId,ev);
+  if(sPts.size===2){const[a,b]=[...sPts.values()];
+    const dd=Math.hypot(a.offsetX-b.offsetX,a.offsetY-b.offsetY);
+    if(sPinch&&dd>0)vFov=Math.max(0.35,Math.min(120,vFov*sPinch/dd));
+    sPinch=dd;drawSky();return;}
+  if(!sDrag)return;
+  vTrack=false;                       /* looking away releases the Sun */
+  const s=vFov/(skySize||300);
+  vAz=((sDrag.az-(ev.offsetX-sDrag.x)*s)%360+360)%360;
+  vAlt=Math.max(-25,Math.min(85,sDrag.alt+(ev.offsetY-sDrag.y)*s));
+  drawSky();});
+["pointerup","pointercancel"].forEach(t=>skyC.addEventListener(t,ev=>{
+  sPts.delete(ev.pointerId);if(sPts.size<2)sPinch=null;
+  if(sPts.size===0){sDrag=null;skyC.style.cursor="grab";}}));
+skyC.addEventListener("wheel",ev=>{ev.preventDefault();
+  fovBy(ev.deltaY>0?1.14:1/1.14);},{passive:false});
+skyC.addEventListener("dblclick",()=>{faceSun();vFov=6;drawSky();});
+/* walking: a step is a degree, which is about 111 km — the sort of distance that
+   decides whether you are under the umbra or watching it go past */
+function walk(dlon,dlat){if(!obs)return;
+  obs=[((obs[0]+dlon+540)%360)-180,Math.max(-89.5,Math.min(89.5,obs[1]+dlat))];
+  circ=null;syncObs();repaint();}
 /* the panel animates open, so its final size is only known once it settles */
 detail.addEventListener("transitionend",ev=>{
-  if(ev.propertyName==="width"||ev.propertyName==="height"){
-    if(detView==="globe")drawGlobe();else drawMap(sel);}});
+  if(ev.propertyName==="width"||ev.propertyName==="height")repaint();});
 /* ---------- machine ---------- */
 const dial=document.getElementById("dial"),dx=dial.getContext("2d");
 const geom=document.getElementById("geom"),gx=geom.getContext("2d");
@@ -965,9 +2205,10 @@ function pickIn(e){const arr=BY.saros.get(e.S);return{arr:arr,i:arr.indexOf(e)};
 function select(e,openDetail){
   sel=e;
   if(openDetail!==false)detail.classList.add("open");
-  stopT();tFrac=.5;tSlide.value=500;tSlide.disabled=!e.p;
-  tPlay.disabled=!e.p;
-  faceEclipse();setTLab();
+  /* every eclipse has a clock now, partials included */
+  stopT();setLive(false);tFrac=.5;tSlide.value=500;
+  tSlide.disabled=false;tPlay.disabled=false;circ=null;
+  faceEclipse();setTLab();syncLive();syncObs();
   const {arr,i}=pickIn(e);
   syncNav();
   stepInfo.innerHTML='<span class="d">'+dstr(e)+'</span><span class="hint">saros '+e.S+
@@ -978,6 +2219,8 @@ function select(e,openDetail){
     (e.p?c("Greatest eclipse",utf(e.p.ut))+
       c("At",Math.abs(e.p.pts[6][1]).toFixed(1)+"\u00b0"+(e.p.pts[6][1]<0?"S":"N")+" "+
         Math.abs(e.p.pts[6][0]).toFixed(1)+"\u00b0"+(e.p.pts[6][0]<0?"W":"E")):"");
+  const w=win(e);
+  pStats.innerHTML+=c("Whole event",fdl(Math.round((w.b-w.a)*60)));
   const pv=arr[i-1];
   if(pv&&pv.p&&e.p){const dl=((e.p.pts[6][0]-pv.p.pts[6][0])+540)%360-180;
     pNote.innerHTML="Saros "+e.S+" last came round in "+pv.ymd[0]+". One turn of the dial later its track has moved <em>"+
@@ -994,13 +2237,13 @@ function nextVisible(from,d){for(let j=from+d;j>=0&&j<E.length;j+=d)if(on[E[j].t
 const navBase=d=>sel?sel.i:(d>0?lo_((view.x0+view.x1)/2)-1:lo_((view.x0+view.x1)/2));
 function stepTime(d){const n=nextVisible(navBase(d),d);
   if(n){stop();select(n,sel?detail.classList.contains("open"):true);}}
-function deselect(){stop();stopT();sel=null;hover=null;
+function deselect(){stop();stopT();setLive(false);sel=null;hover=null;circ=null;
   detail.classList.remove("open");detail.classList.remove("expanded");
   expand.setAttribute("aria-pressed","false");expand.classList.remove("on");
   expand.innerHTML="&#10530;";expand.title="Expand to fill the pane";
   stepInfo.innerHTML='<span class="d">Select an eclipse</span><span class="hint">tap a point on the canon</span>';
   tSlide.disabled=true;tPlay.disabled=true;tLab.textContent="--:-- UT";tDur.textContent="";
-  syncNav();refresh();}
+  syncLive();syncObs();syncNav();refresh();}
 function syncNav(){
   if(sel){const{arr,i}=pickIn(sel);prev.disabled=i<=0;next.disabled=i>=arr.length-1;}
   else{prev.disabled=true;next.disabled=true;}
@@ -1008,7 +2251,7 @@ function syncNav(){
   nextT.disabled=!nextVisible(navBase(1),1);
   clr.disabled=!sel;play.disabled=!sel;}
 function refresh(){draw();setReadout();
-  if(tab==="canon"){if(detView==="globe")drawGlobe();else drawMap(sel);}
+  if(tab==="canon")repaint();
   else{drawDial();drawGeom();}}
 prev.onclick=()=>{stop();step(-1);};
 next.onclick=()=>{stop();step(1);};
@@ -1034,8 +2277,8 @@ function setTab(t){tab=t;
   paneCanon.classList.toggle("on",t==="canon");
   paneMach.classList.toggle("on",t==="machine");
   axisSeg.style.display=t==="canon"?"flex":"none";
-  requestAnimationFrame(()=>{if(t==="canon"){resize();
-    if(detView==="globe")drawGlobe();else drawMap(sel);}else{drawDial();drawGeom();}});}
+  requestAnimationFrame(()=>{if(t==="canon"){resize();repaint();}
+    else{drawDial();drawGeom();}});}
 tCanon.onclick=()=>setTab("canon");tMach.onclick=()=>setTab("machine");
 szBtn.onclick=()=>{szDur=!szDur;szBtn.setAttribute("aria-pressed",String(szDur));
   szBtn.classList.toggle("on",szDur);
@@ -1043,7 +2286,7 @@ szBtn.onclick=()=>{szDur=!szDur;szBtn.setAttribute("aria-pressed",String(szDur))
 document.querySelectorAll(".key").forEach(b=>b.onclick=()=>{
   const t=+b.dataset.t;on[t]=!on[t];b.setAttribute("aria-pressed",String(on[t]));
   if(sel&&!on[sel.t])deselect();else{syncNav();refresh();}});
-new ResizeObserver(()=>{if(tab==="canon"){if(detView==="globe")drawGlobe();else drawMap(sel);}
+new ResizeObserver(()=>{if(tab==="canon")repaint();
   else{drawDial();drawGeom();}}).observe(document.querySelector("main"));
 /* ---------- canon interaction ---------- */
 function pick(px,py){let b=null,bd=17*17;
@@ -1108,6 +2351,11 @@ cv.addEventListener("dblclick",()=>{view.x0=nowY-30;view.x1=nowY+30;fitY();draw(
    the same two directions the canon itself is plotted on */
 addEventListener("keydown",e=>{
   if(e.target&&(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"))return;
+  /* in the ground view, W A S D walks you across the map: a degree a step, or a
+     quarter of one with shift, which is about the width of an umbral path */
+  if(detView==="ground"&&obs&&"wasdWASD".includes(e.key)){
+    const s=e.shiftKey?0.25:1,k=e.key.toLowerCase();
+    walk(k==="a"?-s:k==="d"?s:0,k==="w"?s:k==="s"?-s:0);e.preventDefault();return;}
   if(e.key==="ArrowLeft"){stepTime(-1);e.preventDefault();}
   else if(e.key==="ArrowRight"){stepTime(1);e.preventDefault();}
   else if(e.key==="ArrowUp"&&sel){stop();step(-1);e.preventDefault();}
@@ -1129,7 +2377,10 @@ function setMode(m){if(m===mode)return;
 mSaros.onclick=()=>setMode("saros");mInex.onclick=()=>setMode("inex");mGamma.onclick=()=>setMode("gamma");
 resize();
 tSlide.disabled=true;tPlay.disabled=true;
-setDetView("globe");syncNav();
+setDetView("globe");syncNav();syncLive();
+/* the chip is the only thing on the page that ages, so it is the only thing that
+   needs a heartbeat when nothing is selected */
+setInterval(syncLive,60000);
 </script>
 </body>
 </html>
