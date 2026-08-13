@@ -179,7 +179,7 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <div class="dtools">
         <button class="b arw" id="expand" aria-pressed="false" title="Expand to fill the pane">&#10530;</button>
         <div class="seg" role="group" aria-label="Projection">
-          <button id="vGlobe" aria-pressed="true">Globe</button><button id="vGround" aria-pressed="false">Ground</button><button id="vFlat" aria-pressed="false">Flat</button>
+          <button id="vGlobe" aria-pressed="true">Globe</button><button id="vFlat" aria-pressed="false">Flat</button>
         </div>
         <div class="zbtns">
           <button class="b" id="gOut" aria-label="Zoom out">&minus;</button>
@@ -193,6 +193,7 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <div id="skyBox"><canvas id="sky3d"></canvas><canvas id="sky"></canvas></div>
       <div class="tRow" id="tRow">
         <button class="b" id="tPlay" aria-label="Animate the eclipse">&#9654;</button>
+        <button class="b" id="tSpeed" aria-label="Playback speed">&times;500</button>
         <button class="b" id="tLive" aria-pressed="false" aria-label="Follow the real clock">&#9679; Live</button>
         <input type="range" id="tSlide" min="0" max="1000" value="500" aria-label="Time through the eclipse">
         <span id="tLab">--:-- UT</span><span id="tDur"></span>
@@ -1855,8 +1856,16 @@ function circum(e,lon,lat){
     tot:peak.L.tot,ann:peak.L.ann,
     c1:edge("out",-1),c4:edge("out",1),
     c2:central?edge("in",-1):null,c3:central?edge("in",1):null};}
-/* ---------- clock, live and otherwise ---------- */
-const TPLAY=42000;   /* one whole eclipse in about forty seconds, whatever its length */
+/* ---------- clock, live and otherwise ----------
+
+   Playback runs at a multiple of real time rather than fitting every eclipse into
+   the same number of seconds, so the numbers mean something: at 1x you are
+   watching it happen, and the two and a half hours between first contact and
+   fourth take two and a half hours. 500x puts a whole event in about half a
+   minute, which is the pace the viewer used to run at. */
+const SPEEDS=[1,5,20,60,200,500,2000];
+let spIdx=5;
+const spLabel=v=>v===1?"real time":"×"+v;
 const nowJD=()=>Date.now()/86400000+2440587.5;
 const utOf=jd=>{const c=calOf(jd);return utf(Math.round(c.mins)%1440);};
 function setTLab(){const e=sel;
@@ -1867,8 +1876,7 @@ function setTLab(){const e=sel;
     tDur.textContent=L.obsc>0?(L.obsc*100).toFixed(1)+"% covered":"—";return;}
   const uf=tUF(e);
   const d=e.p&&uf>=0&&uf<=1?Math.round(durAt(e.p,uf)):0;
-  tDur.textContent=d>0?fd(d)+" "+(e.t===1?"annular":"total")
-    +(tTimer?"  ×"+Math.round((win(e).b-win(e).a)*60/(TPLAY/1000)):""):"—";}
+  tDur.textContent=d>0?fd(d)+" "+(e.t===1?"annular":"total"):"—";}
 function repaint(){if(detView==="globe")drawGlobe();
   else if(detView==="ground")drawSky();else drawMap(sel);}
 function stopT(){if(tTimer){cancelAnimationFrame(tTimer);tTimer=null;
@@ -1876,13 +1884,22 @@ function stopT(){if(tTimer){cancelAnimationFrame(tTimer);tTimer=null;
 tPlay.onclick=()=>{if(tTimer){stopT();return;}
   if(!sel)return;setLive(false);
   tPlay.classList.add("on");tPlay.innerHTML="&#9646;&#9646;";
-  let t0=performance.now()-tFrac*TPLAY;
+  let last=performance.now();
   const tick=now=>{if(!tTimer)return;
-    let f=(now-t0)/TPLAY;
-    if(f>=1){f=0;t0=now;}
-    tFrac=f;tSlide.value=Math.round(f*1000);setTLab();repaint();
+    const w=win(sel);
+    /* advance by however much real time has actually passed, times the speed —
+       so a dropped frame loses no eclipse and the rate is honest */
+    const dt=Math.min(0.5,(now-last)/1000);last=now;
+    let m=tOff(sel)+dt*SPEEDS[spIdx]/60;
+    if(m>w.b)m=w.a;
+    tFrac=Math.max(0,Math.min(1,(m-w.a)/(w.b-w.a)));
+    tSlide.value=Math.round(tFrac*1000);setTLab();repaint();
     tTimer=requestAnimationFrame(tick);};
   tTimer=requestAnimationFrame(tick);};
+tSpeed.onclick=()=>{spIdx=(spIdx+1)%SPEEDS.length;
+  tSpeed.textContent=spLabel(SPEEDS[spIdx]);
+  tSpeed.classList.toggle("on",SPEEDS[spIdx]===1);
+  setTLab();};
 tSlide.oninput=()=>{stopT();setLive(false);tFrac=+tSlide.value/1000;setTLab();repaint();};
 /* An eclipse is "live" while the real clock sits inside its window. There is at
    most one at a time, and for about four hours every six months or so. */
@@ -1939,20 +1956,22 @@ liveChip.onclick=()=>{const i=liveChip.dataset.i;
     setObs(s[0],s[1]);setDetView("ground");}
   refresh();};
 tLive.onclick=()=>setLive(!live);
+/* Three views, two buttons: the ground view is not somewhere you switch to, it is
+   what you get by tapping a spot on the globe. Globe takes you back to pick
+   another one. */
 function setDetView(v){detView=v;
   vGlobe.setAttribute("aria-pressed",String(v==="globe"));
-  vGround.setAttribute("aria-pressed",String(v==="ground"));
   vFlat.setAttribute("aria-pressed",String(v==="flat"));
   globeBox.style.display=v==="globe"?"block":"none";
   skyBox.style.display=v==="ground"?"block":"none";
   obsRow.style.display=v==="ground"?"flex":"none";
   tRow.style.display=v==="flat"?"none":"flex";
   mp.style.display=v==="flat"?"block":"none";
-  gHint.textContent=v==="globe"?"drag to spin · tap to stand there"
-    :v==="ground"?"drag to look · W A S D to walk":"flat overview";
+  vGlobe.textContent=v==="ground"?"‹ Globe":"Globe";
+  gHint.textContent=v==="globe"?"drag to spin · tap anywhere to stand there"
+    :v==="ground"?"drag to look · W A S D to walk · Globe to move":"flat overview";
   syncObs();repaint();}
 vGlobe.onclick=()=>setDetView("globe");
-vGround.onclick=()=>setDetView("ground");
 vFlat.onclick=()=>setDetView("flat");
 expand.onclick=()=>{const on=detail.classList.toggle("expanded");
   expand.setAttribute("aria-pressed",String(on));expand.classList.toggle("on",on);
@@ -2031,8 +2050,8 @@ globe.addEventListener("pointermove",ev=>{
   if(t==="pointerup"&&!gMoved&&gPts.size===1&&!gPin){
     const k=camOf(globeBox.clientWidth||320,gSize||320);
     const ll=unpj(ev.offsetX,ev.offsetY,k);
-    if(ll&&sel){const first=!obs;setObs(ll[0],ll[1]);
-      if(first)setDetView("ground");}}
+    /* a tap on the globe is the way into the ground view, every time */
+    if(ll&&sel){setObs(ll[0],ll[1]);setDetView("ground");}}
   gPts.delete(ev.pointerId);if(gPts.size<2)gPinch=null;
   if(gPts.size===0){gDrag=null;gPin=false;globe.style.cursor="grab";}}));
 globe.addEventListener("wheel",ev=>{ev.preventDefault();
