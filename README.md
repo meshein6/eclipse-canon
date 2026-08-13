@@ -10,8 +10,15 @@ path widths and durations all come out of lunar/solar theory plus a land raster.
 Geography is the exception, and only geography: country and province borders come
 from Natural Earth and populated places from GeoNames, purely as reference overlays
 so a zoomed-in globe has recognisable landmarks. Nothing about the eclipses depends
-on them. The whole thing still builds into a single self-contained HTML file that
-makes no network requests at run time.
+on them. The whole thing builds into a single HTML file.
+
+That file used to make no network requests at all. It now makes one kind: the ground
+view fetches elevation tiles for wherever you are standing, because a horizon needs
+metre-scale terrain for a hundred kilometres around you and no amount of packing gets
+that into a page. It is the only thing that reaches out, there is a switch to turn it
+off, and when it fails — offline, blocked, an old browser — the view falls back to a
+flat horizon and everything else carries on. Nothing about the eclipses depends on it
+either.
 
 **[Live demo](https://meshein6.github.io/eclipse-canon/)**
 
@@ -32,11 +39,21 @@ eclipse for its ground track, path width, maximum duration and time of greatest 
 On a wide screen the selected eclipse opens beside the canon; the canon returns to full
 width when nothing is selected.
 
-**Ground view** — tap the globe anywhere and you are standing there, looking up. The sky is
-drawn from the topocentric Sun and Moon at whatever the clock says: the two discs at their
-real sizes and separation, the sky dimming as the Moon eats into the Sun, the corona and
-chromosphere at totality, the ring at annularity, the diamond ring either side of it, and
-the stars coming out when it goes dark enough for them. Drag to look around, scroll to zoom
+**Ground view** — tap the globe anywhere and you are standing there at ground level,
+looking up, with the real landscape of that spot around you. The sky is a shader: Preetham's
+analytic daylight model, so the horizon warms and the zenith deepens on their own rather
+than being painted in. The eclipse enters it as the one change that matters — obscuration
+cuts the direct beam, but the umbra is only a couple of hundred kilometres across and the
+air goes on scattering sunlight in from all round its edge, arriving reddened and along the
+horizon. The 360° sunset at totality falls out of that rather than being faked. The Sun is
+limb-darkened and some five orders of magnitude brighter than the sky beside it, which is
+why it blows out to white while the sky keeps its colour. Exposure adapts partway, since a
+scene running from full noon to the inside of the umbra cannot be held on one setting — but
+only partway, because watching the light go is the point.
+
+Under it, the two discs at their real sizes and separation, the corona and chromosphere at
+totality, the ring at annularity, the diamond ring either side of it, and the stars coming
+out when it goes dark enough for them. Drag to look around, scroll to zoom
 from a 120° sky down to half a degree, and the view tracks the Sun until you drag it away.
 **W A S D** walks you a degree at a time — about the width of an umbral path, which is
 usually the difference between totality and 98%. The bar underneath gives your local
@@ -96,6 +113,9 @@ and watch gamma march across the globe while the dial pointer never moves.
 | Contact times | The scan bisected on separation, and on the horizon, whichever ends the phase first |
 | Event window | First and last penumbral contact, bisected on the cone radius against the globe |
 | Star positions | 60 stars brighter than magnitude 2.2, precessed to date by Meeus ch.21 |
+| Sky colour | Preetham's analytic daylight model in a fragment shader, tone-mapped on luminance |
+| Terrain | AWS terrain tiles, terrarium encoding `(R·256 + G + B/256) − 32768`; 104 rings out to 140 km on 256 spokes, hillshaded off its own gradient |
+| Curvature drop | `d²/2R` with the refracted radius 1.15·R — nearly 700 m at 100 km |
 | Coastlines | Marching squares on a 30-arcsecond land raster, Douglas–Peucker simplified to 3,310 points |
 
 The saros and inex numbers satisfy `k = 223·I + 358·S + 44`, so once one is fixed the
@@ -178,6 +198,13 @@ Structural checks: inex series 30 steps 2000 Feb 5 → 2029 Jan 14 → 2057 Dec 
 - Stars are precessed but not given proper motion, which is a degree or so of error at the
   far ends of the canon for the fastest of them. There are no planets, so the Venus that
   people remember from totality is missing.
+- Terrain is elevation only — hillshaded from its own gradient, not draped in imagery. It
+  is bare ground everywhere: no trees, no buildings, no snow. At 26 m per pixel near you
+  it is a good skyline and a poor foreground, and it will not tell you whether the ridge
+  at the end of your street clears the Sun.
+- The terrain tiles are fetched over the network, so the ground view needs one and the rest
+  of the page does not. Checked against a real tile: Mt Rainier decodes to 4382 m against a
+  true 4392 m.
 - The sky's brightness is a plausible curve, not photometry. It tracks the uncovered area
   of the disc until the last three per cent and then falls off a cliff, which is the right
   shape and roughly the right depth.
@@ -235,7 +262,12 @@ so no workflow is needed.
 
 Country and province borders from [Natural Earth](https://www.naturalearthdata.com/)
 (public domain). Populated places from [GeoNames](https://www.geonames.org/), licensed
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Elevation for the ground view
+from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/), in Mapzen's
+terrarium encoding, fetched at run time.
+
+A. J. Preetham, Peter Shirley and Brian Smits, *A Practical Analytic Model for Daylight*
+(SIGGRAPH 1999), for the sky.
 
 Jean Meeus, *Astronomical Algorithms* (2nd ed.) for the lunation and eclipse machinery,
 and for the Sun and Moon the page carries with it. Fred Espenak's catalogues and the
