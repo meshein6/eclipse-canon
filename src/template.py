@@ -63,7 +63,11 @@ em{font-style:normal;color:var(--corona)}
 #globeBox{position:relative;width:100%;border-bottom:1px solid var(--rule);min-height:200px}
 #globe{display:block;width:100%;height:100%;background:#04070c;cursor:grab;touch-action:none}
 #skyBox{position:relative;width:100%;border-bottom:1px solid var(--rule);min-height:200px;display:none}
-#sky{display:block;width:100%;height:100%;background:#04070c;cursor:grab;touch-action:none}
+/* the scene is drawn in WebGL underneath and the readouts in 2-D on top, which
+   keeps the text crisp and leaves the pointer handlers on one element */
+#sky3d{position:absolute;inset:0;width:100%;height:100%;background:#04070c;display:none}
+#sky{position:absolute;inset:0;width:100%;height:100%;background:#04070c;cursor:grab;touch-action:none}
+#sky.gl{background:transparent}
 .obsRow{display:none;gap:8px 12px;align-items:baseline;flex-wrap:wrap;padding:6px 10px;
  border-bottom:1px solid var(--rule);background:var(--ink2);font-size:10.5px}
 #obsPos{color:var(--corona);font-size:11.5px;white-space:nowrap}
@@ -187,7 +191,7 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
         <span class="hint" id="gHint">drag to spin &middot; tap to stand there</span>
       </div>
       <div id="globeBox"><canvas id="globe"></canvas></div>
-      <div id="skyBox"><canvas id="sky"></canvas></div>
+      <div id="skyBox"><canvas id="sky3d"></canvas><canvas id="sky"></canvas></div>
       <div class="tRow" id="tRow">
         <button class="b" id="tPlay" aria-label="Animate the eclipse">&#9654;</button>
         <button class="b" id="tLive" aria-pressed="false" aria-label="Follow the real clock">&#9679; Live</button>
@@ -197,6 +201,7 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <div class="obsRow" id="obsRow">
         <span id="obsPos">nowhere yet</span>
         <button class="b" id="obsSun" title="Point the view at the Sun and zoom in">&#9788; Find the Sun</button>
+        <button class="b on" id="obsTerr" aria-pressed="true" title="Fetch real elevation for this spot">&#9968; Terrain</button>
         <button class="b" id="obsClr" title="Stop standing anywhere">Clear</button>
         <span id="obsInfo"></span>
       </div>
@@ -204,7 +209,11 @@ button.b:focus-visible{outline:2px solid var(--now);outline-offset:2px}
       <div class="blk"><div class="grid2" id="pStats"></div></div>
       <div class="blk"><div class="note" id="pNote"></div></div>
       <div class="blk"><div class="note" style="font-size:9.5px;opacity:.75">
-        Eclipse geometry computed from lunar/solar theory. Borders from Natural Earth
+        Eclipse geometry computed from lunar/solar theory. Elevation for the ground
+        view is fetched as you use it from
+        <a href="https://registry.opendata.aws/terrain-tiles/" style="color:var(--bronze)">AWS&nbsp;Terrain&nbsp;Tiles</a>
+        (Mapzen terrarium encoding); everything else in the page is offline.
+        Borders from Natural Earth
         (public domain); populated places from
         <a href="https://www.geonames.org/" style="color:var(--bronze)">GeoNames</a>,
         <a href="https://creativecommons.org/licenses/by/4.0/" style="color:var(--bronze)">CC&nbsp;BY&nbsp;4.0</a>.
@@ -1144,11 +1153,484 @@ function dimOf(o){if(o<=0)return 1;
   return Math.max(0.0006,0.03*Math.pow(x,2.1));}
 /* a deterministic wobble, so a given eclipse's corona is always the same one */
 function rnd(s){let x=Math.sin(s*127.1+311.7)*43758.5453;return x-Math.floor(x);}
+
+/* ---------- WebGL sky ----------
+
+   The sky, the two discs and the corona all live at infinity, so the whole scene
+   is a function of the direction a pixel is looking — which makes it one
+   full-screen fragment shader with no geometry and no matrices at all.
+
+   Colour comes from Preetham's analytic daylight model: Perez's five-parameter
+   sky function fitted against turbidity, giving CIE Yxy per direction, which is
+   why the horizon warms and the zenith deepens on their own instead of being
+   painted in by hand.
+
+   The eclipse enters as the one physical change that matters. Obscuration cuts
+   the direct beam, but the umbra is only a couple of hundred kilometres across
+   and the atmosphere goes on scattering sunlight in from all round its edge —
+   light that has come the long way through the lower atmosphere and arrives red.
+   That second term is the 360-degree sunset at totality, and it falls out of the
+   model rather than being faked.
+
+   If any of this fails to compile or the context is refused, glOn stays false and
+   the 2-D renderer below draws everything exactly as it did before. */
+const sky3d=document.getElementById("sky3d");
+let GL=null,glOn=false,glTried=false,glProg=null,glStar=null,glBuf=null,glStarBuf=null,glStarN=0;
+const SKY_VS=`attribute vec2 aPos;void main(){gl_Position=vec4(aPos,0.0,1.0);}`;
+const SKY_FS=`precision highp float;
+uniform vec2 uRes;uniform float uK;
+uniform vec3 uRight,uUp,uFwd,uSun,uMoon,uFlare;
+uniform float uSunR,uMoonR,uObsc,uTurb,uAmb,uExp,uFlareI,uSeed,uNight;
+const float PI=3.14159265359;
+float perez(float cosT,float g,float A,float B,float C,float D,float E){
+  return (1.0+A*exp(B/max(cosT,0.02)))*(1.0+C*exp(D*g)+E*cos(g)*cos(g));}
+/* CIE Yxy straight out of Preetham, then into linear sRGB */
+vec3 skyCol(vec3 dir,vec3 sun,float T,out float lum){
+  float cosT=max(dir.z,0.0);
+  float cosG=clamp(dot(dir,sun),-1.0,1.0);
+  float g=acos(cosG);
+  float tS=acos(clamp(sun.z,-1.0,1.0));
+  float AY= 0.1787*T-1.4630,BY=-0.3554*T+0.4275,CY=-0.0227*T+5.3251,
+        DY= 0.1206*T-2.5771,EY=-0.0670*T+0.3703;
+  float Ax=-0.0193*T-0.2592,Bx=-0.0665*T+0.0008,Cx=-0.0004*T+0.2125,
+        Dx=-0.0641*T-0.8989,Ex=-0.0033*T+0.0452;
+  float Ay=-0.0167*T-0.2608,By=-0.0950*T+0.0092,Cy=-0.0079*T+0.2102,
+        Dy=-0.0441*T-1.6537,Ey=-0.0109*T+0.0529;
+  float chi=(4.0/9.0-T/120.0)*(PI-2.0*tS);
+  float Yz=(4.0453*T-4.9710)*tan(chi)-0.2155*T+2.4192;
+  float s1=tS,s2=s1*s1,s3=s2*s1;
+  float xz=( 0.00166*s3-0.00375*s2+0.00209*s1)*T*T
+          +(-0.02903*s3+0.06377*s2-0.03202*s1+0.00394)*T
+          +( 0.11693*s3-0.21196*s2+0.06052*s1+0.25886);
+  float yz=( 0.00275*s3-0.00610*s2+0.00317*s1)*T*T
+          +(-0.04214*s3+0.08970*s2-0.04153*s1+0.00516)*T
+          +( 0.15346*s3-0.26756*s2+0.06670*s1+0.26688);
+  float dY=perez(cosT,g,AY,BY,CY,DY,EY)/perez(1.0,tS,AY,BY,CY,DY,EY);
+  float dx=perez(cosT,g,Ax,Bx,Cx,Dx,Ex)/perez(1.0,tS,Ax,Bx,Cx,Dx,Ex);
+  float dy=perez(cosT,g,Ay,By,Cy,Dy,Ey)/perez(1.0,tS,Ay,By,Cy,Dy,Ey);
+  float Y=max(Yz*dY,0.0),x=xz*dx,y=max(yz*dy,1e-4);
+  lum=Y;
+  float X=x/y*Y,Z=(1.0-x-y)/y*Y;
+  vec3 c=vec3( 3.2406*X-1.5372*Y-0.4986*Z,
+              -0.9689*X+1.8758*Y+0.0415*Z,
+               0.0557*X-0.2040*Y+1.0570*Z);
+  return max(c,0.0);}
+float hash(float n){return fract(sin(n*127.1+311.7)*43758.5453);}
+void main(){
+  vec2 q=(gl_FragCoord.xy-0.5*uRes)/uK;
+  float r=length(q);
+  float th=2.0*atan(r*0.5);
+  vec3 dir=(r<1e-6)?uFwd:normalize(cos(th)*uFwd+sin(th)*((q.x/r)*uRight+(q.y/r)*uUp));
+  /* Preetham has nothing to say once the Sun is down, so it is evaluated with the
+     Sun held at the horizon and faded out into a night sky underneath */
+  vec3 sunUp=uSun;
+  sunUp.z=max(sunUp.z,0.0);
+  sunUp=normalize(sunUp+vec3(0.0,0.0,1e-5));
+  float lum;
+  vec3 col=skyCol(dir,sunUp,uTurb,lum);
+  float day=smoothstep(-0.20,0.02,uSun.z);
+  col*=day;lum*=day;
+  /* the eclipse: direct beam cut by obscuration, plus what the atmosphere
+     scatters in from outside the umbra, which arrives reddened and along the
+     horizon */
+  float horiz=pow(1.0-clamp(dir.z,0.0,1.0),3.0);
+  float direct=1.0-uObsc;
+  /* blue-grey overhead where the light has come almost straight down through the
+     umbra, orange round the rim where it has travelled a long shallow path in
+     from the sunlit air outside */
+  vec3 ambCol=mix(vec3(0.34,0.46,0.66),vec3(1.00,0.42,0.20),horiz);
+  col=col*direct+lum*uAmb*(0.22+0.78*horiz)*ambCol;
+  /* night: a cold gradient that the twilight fades down into */
+  col+=vec3(0.055,0.095,0.190)*(1.0-day)*(0.35+0.65*horiz)*uNight;
+  float aS=acos(clamp(dot(dir,uSun),-1.0,1.0));
+  float aM=acos(clamp(dot(dir,uMoon),-1.0,1.0));
+  /* corona, only worth drawing once the photosphere is gone */
+  if(uObsc>0.995&&aM>uMoonR){
+    float k=aM/uMoonR;
+    /* streamers, on two scales, brightest round the equator of a tilted axis —
+       the real corona follows the Sun's magnetic field, which is why it has
+       equatorial wings and short polar brushes rather than an even halo */
+    float ang=atan(dot(dir,uUp)-dot(uMoon,uUp),dot(dir,uRight)-dot(uMoon,uRight));
+    float s1=0.60+0.40*sin(ang*6.0+uSeed*11.0);
+    float s2=0.72+0.28*sin(ang*13.0-uSeed*7.0);
+    float eq=0.45+0.55*abs(cos(ang-uSeed*3.1));
+    float st=s1*s2*mix(0.55,1.0,eq);
+    float f=pow(1.0/k,2.4)*st+pow(1.0/k,7.0)*0.9;
+    col+=vec3(0.94,0.96,1.00)*f*5.0;
+    /* chromosphere: a thin red rim for the few seconds either side of totality */
+    col+=vec3(1.0,0.26,0.18)*exp(-(k-1.0)*150.0)*6.0;}
+  /* The Sun, limb-darkened. Its surface is some five orders of magnitude
+     brighter than the sky beside it, which is the whole reason it blows out to
+     white while the sky keeps its colour. */
+  if(aS<uSunR&&aM>uMoonR){
+    float mu=sqrt(max(1.0-pow(aS/uSunR,2.0),0.0));
+    float I=1.0-0.60*(1.0-mu)-0.19*(1.0-mu)*(1.0-mu);
+    col+=vec3(1900.0,1830.0,1700.0)*I;}
+  /* glare off whatever sliver of photosphere is still showing */
+  float aF=acos(clamp(dot(dir,uFlare),-1.0,1.0));
+  col+=vec3(1.0,0.96,0.88)*uFlareI*exp(-aF/(uSunR*7.0))*30.0;
+  col+=vec3(1.0,0.97,0.90)*uFlareI*exp(-aF/(uSunR*46.0))*5.0;
+  /* Exposure, then tone-mapped on luminance alone. Per-channel compression
+     would wash the blue out of the sky exactly where it is strongest. */
+  col*=uExp;
+  float L=dot(col,vec3(0.2126,0.7152,0.0722));
+  col*=(L>1e-6)?(L/(1.0+L))/L:0.0;
+  gl_FragColor=vec4(pow(max(col,0.0),vec3(1.0/2.2)),1.0);}`;
+const STAR_VS=`attribute vec3 aDir;attribute float aMag;
+uniform vec3 uRight,uUp,uFwd;uniform float uK,uDpr;uniform vec2 uRes;
+varying float vI;
+void main(){
+  float d=dot(aDir,uFwd);
+  if(d<-0.3){gl_Position=vec4(9.0,9.0,9.0,1.0);gl_PointSize=1.0;vI=0.0;return;}
+  float th=acos(clamp(d,-1.0,1.0));
+  vec2 pp=vec2(dot(aDir,uRight),dot(aDir,uUp));
+  float l=length(pp);
+  vec2 px=((l<1e-6)?vec2(0.0):pp/l*(2.0*tan(th*0.5)))*uK;
+  gl_Position=vec4(px/(0.5*uRes),0.0,1.0);
+  gl_PointSize=max(1.5,(3.4-aMag*0.62))*uDpr;
+  vI=clamp(1.35-aMag*0.30,0.15,1.0);}`;
+const STAR_FS=`precision mediump float;varying float vI;uniform float uAlpha;
+void main(){
+  vec2 d=gl_PointCoord-0.5;
+  float a=exp(-dot(d,d)*22.0);
+  gl_FragColor=vec4(vec3(0.92,0.95,1.0)*vI,a*uAlpha*vI);}`;
+function glCompile(gl,type,src){const s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;}
+function glLink(gl,vs,fs){const p=gl.createProgram();
+  gl.attachShader(p,glCompile(gl,gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,glCompile(gl,gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p));
+  /* uniforms and attributes looked up once and hung off the program */
+  p.u={};p.a={};
+  const nu=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<nu;i++){const n=gl.getActiveUniform(p,i).name;
+    p.u[n]=gl.getUniformLocation(p,n);}
+  const na=gl.getProgramParameter(p,gl.ACTIVE_ATTRIBUTES);
+  for(let i=0;i<na;i++){const n=gl.getActiveAttrib(p,i).name;
+    p.a[n]=gl.getAttribLocation(p,n);}
+  return p;}
+function glInit(){
+  if(glTried)return glOn;
+  glTried=true;
+  try{
+    const gl=sky3d.getContext("webgl",{antialias:true,alpha:false,depth:true,
+      preserveDrawingBuffer:true})||sky3d.getContext("experimental-webgl");
+    if(!gl)return false;
+    GL=gl;
+    glProg=glLink(gl,SKY_VS,SKY_FS);
+    glStar=glLink(gl,STAR_VS,STAR_FS);
+    glBuf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,glBuf);
+    /* one oversized triangle covers the viewport with no seam down the middle */
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+    glStarBuf=gl.createBuffer();
+    glOn=true;
+  }catch(err){GL=null;glOn=false;}
+  return glOn;}
+/* the star field in the observer's frame, rebuilt only when the sky has turned */
+let starKey="";
+function glStars(L,jd){
+  const key=jd.toFixed(4)+":"+obs[0].toFixed(2)+":"+obs[1].toFixed(2);
+  if(key===starKey)return;
+  starKey=key;
+  const T=(jd-2451545.0)/36525,a=[];
+  for(const st of STARS){const pd=precess(st[0]*15,st[1],T);
+    const v=L.toH([cosD(pd[1])*cosD(pd[0]),cosD(pd[1])*sinD(pd[0]),sinD(pd[1])]);
+    if(v[2]<-0.05)continue;
+    a.push(v[0],v[1],v[2],st[2]);}
+  glStarN=a.length/4;
+  GL.bindBuffer(GL.ARRAY_BUFFER,glStarBuf);
+  GL.bufferData(GL.ARRAY_BUFFER,new Float32Array(a),GL.DYNAMIC_DRAW);}
+/* How much sky glow survives once the direct beam has gone. Never zero: the
+   umbra is only a couple of hundred kilometres across and the air above you is
+   still lit from outside it. This is an adapted brightness, not a photometric
+   one — the true ratio at totality is nearer one part in ten thousand, which on
+   a screen with no dark adaptation behind it would just be black. */
+function ambOf(o){
+  if(o<0.94)return 0.0;
+  const x=Math.min(1,(o-0.94)/0.06);
+  return 0.16*x*x;}
+/* Preetham's zenith luminance, on the CPU, purely as a reference level */
+function zenLum(T,sunAlt){
+  const tS=Math.max(0,Math.min(Math.PI/2-0.02,(90-sunAlt)*RAD));
+  const chi=(4/9-T/120)*(Math.PI-2*tS);
+  return Math.max(0.05,(4.0453*T-4.9710)*Math.tan(chi)-0.2155*T+2.4192);}
+/* Exposure. A real scene here runs from full noon to the inside of the umbra,
+   some four orders of magnitude, and a fixed exposure can only get one of them
+   right. This is the eye adapting — but deliberately only part of the way, since
+   watching the light go is the entire point of standing here. */
+function expOf(L){
+  const ref=Math.max(0.05,zenLum(2.6,L.S.alt)*Math.max(1-L.obsc,ambOf(L.obsc)*0.9));
+  return 0.30/Math.pow(ref,0.62);}
+/* ---------- terrain ----------
+
+   The one thing on this page that is fetched while it runs. Elevation comes from
+   the AWS terrain tiles, which are open, need no key and send a permissive CORS
+   header, in Mapzen's terrarium encoding: height in metres packed across the
+   three colour channels as (R*256 + G + B/256) - 32768.
+
+   The mesh is polar rather than square — rings of increasing spacing out to a
+   hundred-odd kilometres, on 256 spokes. That puts the detail where the eye is,
+   gives every ring a natural level of detail, and matches the shape of the
+   problem, which is a horizon seen from one fixed point.
+
+   Everything degrades: no network, an old browser, a tile that will not load,
+   and you get the flat horizon back with nothing broken. */
+let terrHost="https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
+const TERRAIN_URL=(z,x,y)=>terrHost+"/"+z+"/"+x+"/"+y+".png";
+const TERRAIN_CREDIT="Terrain: AWS Terrain Tiles / Mapzen";
+/* zoom, and how many tiles either side of the middle one to pull at that zoom */
+const TZ=[[12,1],[9,1],[6,1]];
+const TILES=new Map();
+let terrOn=true,terrMesh=null,terrKey="",terrBusy=0,terrWant=0,terrBuf=null,terrNrm=null,
+    terrIdx=null,terrHgt=null,terrN=0,glTerr=null,terrDec=null;
+const tileX=(lon,z)=>(lon+180)/360*Math.pow(2,z);
+const tileY=(lat,z)=>{const r=lat*RAD;
+  return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);};
+function tileGet(z,x,y,done){
+  const n=1<<z;
+  x=((x%n)+n)%n;
+  if(y<0||y>=n)return null;
+  const k=z+"/"+x+"/"+y;
+  let t=TILES.get(k);
+  if(t)return t;
+  t={h:null,fail:false};TILES.set(k,t);
+  terrWant++;terrBusy++;
+  const img=new Image();
+  img.crossOrigin="anonymous";
+  img.onload=()=>{
+    try{
+      if(!terrDec){terrDec=document.createElement("canvas");terrDec.width=terrDec.height=256;}
+      const cx=terrDec.getContext("2d",{willReadFrequently:true});
+      cx.clearRect(0,0,256,256);cx.drawImage(img,0,0,256,256);
+      const d=cx.getImageData(0,0,256,256).data,a=new Float32Array(256*256);
+      for(let i=0,j=0;i<a.length;i++,j+=4)
+        a[i]=(d[j]*256+d[j+1]+d[j+2]/256)-32768;
+      t.h=a;
+    }catch(err){t.fail=true;}
+    terrBusy--;terrDone();};
+  img.onerror=()=>{t.fail=true;terrBusy--;terrDone();};
+  img.src=TERRAIN_URL(z,x,y);
+  return t;}
+let terrTimer=null;
+function terrDone(){
+  /* rebuild as tiles land, so the horizon fills in rather than arriving all at
+     once — but coalesced, since a rebuild costs more than a decode */
+  if(terrTimer)return;
+  terrTimer=setTimeout(()=>{terrTimer=null;
+    if(detView==="ground"&&obs){terrMesh=null;drawSky();}
+    syncObs();},180);}
+/* metres above the ellipsoid at a place, from the sharpest tile that has it */
+function elevAt(lon,lat){
+  for(const[z]of TZ){
+    const fx=tileX(lon,z),fy=tileY(lat,z);
+    const n=1<<z,tx=((Math.floor(fx)%n)+n)%n,ty=Math.floor(fy);
+    if(ty<0||ty>=n)continue;
+    const t=TILES.get(z+"/"+tx+"/"+ty);
+    if(!t||!t.h)continue;
+    /* bilinear, so the mesh does not come out in steps */
+    const px=(fx-Math.floor(fx))*256,py=(fy-Math.floor(fy))*256;
+    const x0=Math.min(255,Math.max(0,Math.floor(px))),y0=Math.min(255,Math.max(0,Math.floor(py)));
+    const x1=Math.min(255,x0+1),y1=Math.min(255,y0+1);
+    const sx=px-x0,sy=py-y0,H=t.h;
+    return H[y0*256+x0]*(1-sx)*(1-sy)+H[y0*256+x1]*sx*(1-sy)
+          +H[y1*256+x0]*(1-sx)*sy+H[y1*256+x1]*sx*sy;}
+  return null;}
+function terrFetch(lon,lat){
+  for(const[z,rad]of TZ){
+    const cx=Math.floor(tileX(lon,z)),cy=Math.floor(tileY(lat,z));
+    for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++)
+      tileGet(z,cx+dx,cy+dy);}}
+/* Rings out to 140 km, spaced so the near ground gets the vertices. Earth's
+   curvature drops the far ground away by d^2/2R, using the refracted radius —
+   at 100 km that is nearly 700 m, which is why distant ranges stand only partly
+   above the horizon. */
+const TRINGS=104,TSPOKE=256,TFAR=140000,REFR=1.15;
+function buildTerrain(){
+  const h0=elevAt(obs[0],obs[1]);
+  if(h0===null)return null;
+  const R=6371000*REFR,eye=1.7;
+  const pos=new Float32Array(TSPOKE*TRINGS*3),nrm=new Float32Array(TSPOKE*TRINGS*3);
+  const hs=new Float32Array(TSPOKE*TRINGS);
+  const la=obs[1]*RAD,coslat=Math.cos(la);
+  for(let r=0;r<TRINGS;r++){
+    /* geometric spacing: a stride at your feet, kilometres at the skyline */
+    const d=1.5*Math.pow(TFAR/1.5,r/(TRINGS-1));
+    const drop=d*d/(2*R);
+    for(let s=0;s<TSPOKE;s++){
+      const az=s/TSPOKE*2*Math.PI;
+      const dn=d*Math.cos(az),de=d*Math.sin(az);
+      const lat2=obs[1]+dn/111320,lon2=obs[0]+de/(111320*Math.max(0.05,coslat));
+      let hv=elevAt(lon2,lat2);
+      if(hv===null)hv=h0;
+      const i=(r*TSPOKE+s);
+      hs[i]=hv;
+      pos[i*3]=de;pos[i*3+1]=dn;pos[i*3+2]=hv-h0-drop-eye;}}
+  /* normals by central difference on the polar grid */
+  for(let r=0;r<TRINGS;r++)for(let s=0;s<TSPOKE;s++){
+    const i=r*TSPOKE+s;
+    const a=r>0?(r-1)*TSPOKE+s:i,b=r<TRINGS-1?(r+1)*TSPOKE+s:i;
+    const c=r*TSPOKE+((s+TSPOKE-1)%TSPOKE),e=r*TSPOKE+((s+1)%TSPOKE);
+    const u=[pos[b*3]-pos[a*3],pos[b*3+1]-pos[a*3+1],pos[b*3+2]-pos[a*3+2]];
+    const v=[pos[e*3]-pos[c*3],pos[e*3+1]-pos[c*3+1],pos[e*3+2]-pos[c*3+2]];
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    if(n[2]<0)n=[-n[0],-n[1],-n[2]];
+    const m=Math.hypot(n[0],n[1],n[2])||1;
+    nrm[i*3]=n[0]/m;nrm[i*3+1]=n[1]/m;nrm[i*3+2]=n[2]/m;}
+  const idx=[];
+  for(let r=0;r<TRINGS-1;r++)for(let s=0;s<TSPOKE;s++){
+    const s2=(s+1)%TSPOKE;
+    const a=r*TSPOKE+s,b=r*TSPOKE+s2,c=(r+1)*TSPOKE+s,d2=(r+1)*TSPOKE+s2;
+    idx.push(a,c,b,b,c,d2);}
+  return{pos:pos,nrm:nrm,hs:hs,idx:new Uint16Array(idx),h0:h0};}
+const TERR_VS=`attribute vec3 aPos;attribute vec3 aNrm;attribute float aH;
+uniform vec3 uRight,uUp,uFwd;uniform float uK;uniform vec2 uRes;
+varying vec3 vN;varying float vD,vH,vC;
+void main(){
+  float len=length(aPos);
+  vec3 d=aPos/max(len,1.0);
+  float c=dot(d,uFwd);
+  vec2 pp=vec2(dot(d,uRight),dot(d,uUp));
+  float l=length(pp);
+  float th=acos(clamp(c,-1.0,1.0));
+  vec2 px=((l<1e-6)?vec2(0.0):pp/l*(2.0*tan(min(th,1.54)*0.5)))*uK;
+  /* depth grows with the log of distance, so near ground hides far ground */
+  float z=clamp(log(max(len,1.0))/12.5,0.0,1.0);
+  gl_Position=vec4(px/(0.5*uRes),z*2.0-1.0,1.0);
+  vN=aNrm;vD=len;vH=aH;vC=c;}`;
+const TERR_FS=`precision highp float;
+varying vec3 vN;varying float vD,vH,vC;
+uniform vec3 uSunDir,uHaze,uAmbC;uniform float uObsc,uExp,uAmb,uSunUp;
+void main(){
+  /* ground behind you would otherwise be flung right across the frame by a
+     projection that only makes sense forwards */
+  if(vC<0.02)discard;
+  vec3 n=normalize(vN);
+  float lam=max(dot(n,uSunDir),0.0);
+  /* the ground goes out with the Sun: direct light cut by obscuration, then
+     whatever the sky still throws down */
+  float direct=(1.0-uObsc)*max(uSunUp,0.0);
+  float sky=0.16+0.55*max(n.z,0.0);
+  vec3 rock=(vH<0.5)?vec3(0.030,0.055,0.085):mix(vec3(0.085,0.098,0.062),
+       vec3(0.30,0.30,0.31),clamp((vH-900.0)/2400.0,0.0,1.0));
+  vec3 c=rock*(lam*direct*11.0+sky*(0.30+uAmb*14.0)*(0.20+0.80*direct));
+  /* aerial perspective: distance mixes the ground into the sky behind it */
+  float f=1.0-exp(-vD/30000.0);
+  c=mix(c,uHaze,f*0.99);
+  c*=uExp;
+  float L=dot(c,vec3(0.2126,0.7152,0.0722));
+  c*=(L>1e-6)?(L/(1.0+L))/L:0.0;
+  gl_FragColor=vec4(pow(max(c,0.0),vec3(1.0/2.2)),1.0);}`;
+function drawTerrain(gl,c,L,W,H,dpr){
+  if(!terrOn||!obs)return false;
+  const key=obs[0].toFixed(4)+":"+obs[1].toFixed(4);
+  if(key!==terrKey){terrKey=key;terrMesh=null;terrFetch(obs[0],obs[1]);}
+  if(!terrMesh){
+    terrMesh=buildTerrain();
+    if(!terrMesh)return false;
+    if(!glTerr)glTerr=glLink(gl,TERR_VS,TERR_FS);
+    if(!terrBuf){terrBuf=gl.createBuffer();terrNrm=gl.createBuffer();
+      terrIdx=gl.createBuffer();terrHgt=gl.createBuffer();}
+    gl.bindBuffer(gl.ARRAY_BUFFER,terrBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,terrMesh.pos,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,terrNrm);
+    gl.bufferData(gl.ARRAY_BUFFER,terrMesh.nrm,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER,terrHgt);
+    gl.bufferData(gl.ARRAY_BUFFER,terrMesh.hs,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,terrIdx);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,terrMesh.idx,gl.STATIC_DRAW);
+    terrN=terrMesh.idx.length;}
+  if(!terrN)return false;
+  const p=glTerr;
+  gl.useProgram(p);
+  gl.bindBuffer(gl.ARRAY_BUFFER,terrBuf);
+  gl.enableVertexAttribArray(p.a.aPos);gl.vertexAttribPointer(p.a.aPos,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,terrNrm);
+  gl.enableVertexAttribArray(p.a.aNrm);gl.vertexAttribPointer(p.a.aNrm,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,terrHgt);
+  gl.enableVertexAttribArray(p.a.aH);gl.vertexAttribPointer(p.a.aH,1,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,terrIdx);
+  gl.uniform2f(p.u.uRes,W,H);gl.uniform1f(p.u.uK,c.k*dpr);
+  gl.uniform3fv(p.u.uRight,c.r);gl.uniform3fv(p.u.uUp,c.u);gl.uniform3fv(p.u.uFwd,c.f);
+  gl.uniform3fv(p.u.uSunDir,L.hS);
+  /* the haze the far ground fades into is the sky just above the horizon */
+  const dim=(1-L.obsc),amb=ambOf(L.obsc);
+  const hz=[0.30+0.9*dim+amb*3.0,0.36+1.05*dim+amb*1.4,0.46+1.35*dim+amb*0.8];
+  gl.uniform3fv(p.u.uHaze,new Float32Array(hz));
+  gl.uniform3fv(p.u.uAmbC,new Float32Array([0.34,0.46,0.66]));
+  gl.uniform1f(p.u.uObsc,L.obsc);gl.uniform1f(p.u.uExp,expOf(L));
+  gl.uniform1f(p.u.uAmb,amb);
+  gl.uniform1f(p.u.uSunUp,Math.max(0,Math.min(1,(L.S.alt+3)/6)));
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+  gl.drawElements(gl.TRIANGLES,terrN,gl.UNSIGNED_SHORT,0);
+  gl.disable(gl.DEPTH_TEST);
+  return true;}
+function drawGL(L,jd,w,h,dpr){
+  const gl=GL;
+  const W=Math.round(w*dpr),H=Math.round(h*dpr);
+  if(sky3d.width!==W||sky3d.height!==H){sky3d.width=W;sky3d.height=H;}
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const c=skyCam(w,h);
+  const k=c.k*dpr;
+  /* the sliver of Sun still showing, which is what the glare hangs off */
+  let fl=L.hS,fi=0;
+  if(L.obsc>0&&!L.tot){
+    const d=[L.hS[0]-L.hM[0],L.hS[1]-L.hM[1],L.hS[2]-L.hM[2]];
+    const n=Math.hypot(d[0],d[1],d[2]);
+    if(n>1e-9){const s=Math.min(L.rM,L.sep)*RAD;
+      fl=[L.hS[0]+d[0]/n*s*0.9,L.hS[1]+d[1]/n*s*0.9,L.hS[2]+d[2]/n*s*0.9];
+      const m=Math.hypot(fl[0],fl[1],fl[2]);fl=[fl[0]/m,fl[1]/m,fl[2]/m];}
+    fi=Math.pow(1-L.obsc,0.55);}
+  else if(L.obsc<=0)fi=1;
+  const p=glProg;
+  gl.useProgram(p);
+  gl.bindBuffer(gl.ARRAY_BUFFER,glBuf);
+  gl.enableVertexAttribArray(p.a.aPos);
+  gl.vertexAttribPointer(p.a.aPos,2,gl.FLOAT,false,0,0);
+  gl.uniform2f(p.u.uRes,W,H);gl.uniform1f(p.u.uK,k);
+  gl.uniform3fv(p.u.uRight,c.r);gl.uniform3fv(p.u.uUp,c.u);gl.uniform3fv(p.u.uFwd,c.f);
+  gl.uniform3fv(p.u.uSun,L.hS);gl.uniform3fv(p.u.uMoon,L.hM);gl.uniform3fv(p.u.uFlare,fl);
+  gl.uniform1f(p.u.uSunR,L.rS*RAD);gl.uniform1f(p.u.uMoonR,L.rM*RAD);
+  gl.uniform1f(p.u.uObsc,L.obsc);gl.uniform1f(p.u.uTurb,2.6);
+  gl.uniform1f(p.u.uAmb,ambOf(L.obsc));gl.uniform1f(p.u.uExp,expOf(L));
+  gl.uniform1f(p.u.uFlareI,fi);gl.uniform1f(p.u.uSeed,(sel?sel.i%97:0)/97);
+  gl.uniform1f(p.u.uNight,1);
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  /* stars, over the sky and under the ground */
+  const dim=dimOf(L.obsc)*Math.max(0.02,Math.min(1,(L.S.alt+12)/14));
+  const sa=Math.max(0,Math.min(1,(0.02-dim)/0.018));
+  if(sa>0.01){
+    glStars(L,jd);
+    if(glStarN){
+      const q=glStar;
+      gl.useProgram(q);
+      gl.bindBuffer(gl.ARRAY_BUFFER,glStarBuf);
+      gl.enableVertexAttribArray(q.a.aDir);
+      gl.vertexAttribPointer(q.a.aDir,3,gl.FLOAT,false,16,0);
+      gl.enableVertexAttribArray(q.a.aMag);
+      gl.vertexAttribPointer(q.a.aMag,1,gl.FLOAT,false,16,12);
+      gl.uniform2f(q.u.uRes,W,H);gl.uniform1f(q.u.uK,k);gl.uniform1f(q.u.uDpr,dpr);
+      gl.uniform3fv(q.u.uRight,c.r);gl.uniform3fv(q.u.uUp,c.u);gl.uniform3fv(q.u.uFwd,c.f);
+      gl.uniform1f(q.u.uAlpha,sa);
+      gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+      gl.drawArrays(gl.POINTS,0,glStarN);
+      gl.disable(gl.BLEND);}}
+  /* the ground last, over the stars it hides */
+  return drawTerrain(gl,c,L,W,H,dpr);
+}
 function drawSky(){
   if(detView!=="ground")return;
   const {w,h}=sizeSky();if(!w)return;
   const e=sel;
-  if(!obs||!e){sc.fillStyle="#04070c";sc.fillRect(0,0,w,h);
+  if(!obs||!e){sky3d.style.display="none";skyC.classList.remove("gl");
+    sc.fillStyle="#04070c";sc.fillRect(0,0,w,h);
     sc.fillStyle="#5d6b80";sc.font='10.5px "IBM Plex Mono",monospace';
     sc.textAlign="center";sc.textBaseline="middle";
     sc.fillText(e?"Tap the globe to stand somewhere":"Select an eclipse first",w/2,h/2);
@@ -1160,6 +1642,14 @@ function drawSky(){
   if(vTrack){vAz=L.S.az;vAlt=Math.max(-8,Math.min(80,L.S.alt));}
   const c=skyCam(w,h);
   const dim=dimOf(L.obsc),cols=skyCols(L.S.alt,dim);
+  const useGL=glInit();
+  let hasTerr=false;
+  sky3d.style.display=useGL?"block":"none";
+  skyC.classList.toggle("gl",useGL);
+  if(useGL){
+    hasTerr=drawGL(L,jd,w,h,Math.min(devicePixelRatio||1,2));
+    sc.clearRect(0,0,w,h);
+  }else{
   /* Sky, banded by the altitude each row is actually looking at rather than by
      how far down the canvas it is — so zooming in on the Sun gives one flat
      colour instead of a whole day's worth of gradient across two degrees. */
@@ -1180,7 +1670,10 @@ function drawSky(){
       const r=Math.max(0.6,1.9-st[2]*0.42);
       sc.fillStyle="#e8eef7";sc.beginPath();sc.arc(p.x,p.y,r,0,6.2832);sc.fill();}
     sc.globalAlpha=1;}
-  /* faint altitude and azimuth grid, so a spin still feels anchored */
+  }
+  /* faint altitude and azimuth grid, so a spin still feels anchored. Only in the
+     flat renderer — over a real sky it reads as scaffolding. */
+  if(!useGL){
   sc.strokeStyle="rgba(255,255,255,.07)";sc.lineWidth=1;
   for(let az=0;az<360;az+=30){sc.beginPath();let up=false;
     for(let al=0;al<=88;al+=2){const p=pjSky(altaz(al,az),c);
@@ -1190,11 +1683,13 @@ function drawSky(){
     for(let az=0;az<=360;az+=3){const p=pjSky(altaz(al,az),c);
       if(p.v<=0.02){up=false;continue;}up?sc.lineTo(p.x,p.y):sc.moveTo(p.x,p.y);up=true;}
     sc.stroke();}
+  }
   /* Sun and Moon. The bloom is drawn first so the Moon can cut into it. */
   const sp=pjSky(L.hS,c);
   const rpx=(p,deg)=>{const q=pjSky(rot(p,deg),c);return Math.hypot(q.x-sp.x,q.y-sp.y);};
   const rS=Math.max(1.2,rpx(L.hS,L.rS)),ratio=L.rM/L.rS;
   const mp=pjSky(L.hM,c),rM=Math.max(1.2,rS*ratio);
+  if(!useGL){
   if(sp.v>0){
     const vis=1-L.obsc;
     if(!L.tot){
@@ -1247,6 +1742,7 @@ function drawSky(){
       g.addColorStop(1,"rgba(255,250,225,0)");
       sc.fillStyle=g;sc.beginPath();sc.arc(bx,by,br*7,0,6.2832);sc.fill();
       sc.fillStyle="#fffef8";sc.beginPath();sc.arc(bx,by,br,0,6.2832);sc.fill();}}
+  }
   /* The ground. Stereographic turns the horizon into a single closed curve, and
      the ground is whichever side of it the zenith is not on — outside it when you
      are looking up, inside it when you are looking down at your feet. */
@@ -1257,6 +1753,8 @@ function drawSky(){
   for(let i=0,j=hp.length-1;i<hp.length;j=i++)
     if((hp[i].y>zp.y)!==(hp[j].y>zp.y)&&
        zp.x<(hp[j].x-hp[i].x)*(zp.y-hp[i].y)/(hp[j].y-hp[i].y)+hp[i].x)skyIn=!skyIn;
+  /* real ground draws its own horizon, so the flat one steps aside */
+  if(!hasTerr){
   sc.beginPath();
   if(skyIn)sc.rect(-1e5,-1e5,2e5,2e5);
   hp.forEach((p,i)=>i?sc.lineTo(p.x,p.y):sc.moveTo(p.x,p.y));
@@ -1270,6 +1768,7 @@ function drawSky(){
       if(hp[i].v<=0.02){up=false;continue;}
       up?sc.lineTo(hp[i].x,hp[i].y):sc.moveTo(hp[i].x,hp[i].y);up=true;}}
   sc.stroke();
+  }
   /* cardinal points on the horizon */
   sc.font='9px "IBM Plex Mono",monospace';sc.textAlign="center";sc.textBaseline="top";
   for(const[az,nm]of[[0,"N"],[45,"NE"],[90,"E"],[135,"SE"],[180,"S"],[225,"SW"],
@@ -1496,6 +1995,10 @@ function syncObs(){
   /* say so when it is the horizon that ends it rather than the Moon */
   const end=c=>at(c.t)+(c.hz?" (horizon)":"");
   bits.push('<span class="lbl">Visible</span>'+end(ci.c1)+"–"+end(ci.c4));
+  if(terrOn){const h=elevAt(obs[0],obs[1]);
+    bits.push('<span class="lbl">Ground</span>'+(h===null
+      ?(terrBusy?"loading…":"—")
+      :Math.round(h)+" m"+(terrBusy?" · loading…":"")));}
   obsInfo.innerHTML=bits.join(' &nbsp;·&nbsp; ');}
 function setObs(lon,lat){obs=[lon,lat];circ=null;
   faceSun();syncObs();repaint();}
@@ -1505,6 +2008,12 @@ function faceSun(){vTrack=true;
   const L=local(tJD(sel),obs[1],obs[0]);
   vAz=L.S.az;vAlt=Math.max(-8,Math.min(80,L.S.alt));}
 obsClr.onclick=()=>{obs=null;circ=null;syncObs();repaint();};
+/* Terrain is the one thing here that reaches the network. It can be switched
+   off, and the page falls back to a flat horizon with nothing else changed. */
+obsTerr.onclick=()=>{terrOn=!terrOn;
+  obsTerr.classList.toggle("on",terrOn);
+  obsTerr.setAttribute("aria-pressed",String(terrOn));
+  terrMesh=null;terrKey="";syncObs();repaint();};
 obsSun.onclick=()=>{faceSun();vFov=Math.min(vFov,12);drawSky();};
 /* spin + zoom + stand */
 let gDrag=null,gPts=new Map(),gPinch=null,gMoved=false,gPin=false;
