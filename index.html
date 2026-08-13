@@ -1775,19 +1775,6 @@ function drawSky(){
     const p=pjSky(altaz(0,az),c);if(p.v<=0.05)continue;
     if(p.x<-10||p.x>w+10)continue;
     sc.fillStyle=az%90?"#4d5c72":"#8496ad";sc.fillText(nm,p.x,p.y+4);}
-  /* you, but only when the ground you are standing on is actually in shot */
-  let onGround=false;
-  for(const p of hp)if(p.x>-40&&p.x<w+40&&p.y>0&&p.y<h+60){onGround=true;break;}
-  if(onGround){
-  const fy=h-6,fx=w/2;
-  sc.fillStyle="#171d27";
-  sc.beginPath();sc.ellipse(fx,fy,26,5,0,0,6.2832);sc.fill();
-  sc.strokeStyle="#2b3646";sc.lineWidth=2.2;sc.lineCap="round";
-  sc.beginPath();sc.moveTo(fx,fy-8);sc.lineTo(fx,fy-20);
-  sc.moveTo(fx,fy-11);sc.lineTo(fx-5,fy-16);sc.moveTo(fx,fy-11);sc.lineTo(fx+5,fy-16);
-  sc.moveTo(fx,fy-8);sc.lineTo(fx-4,fy-1);sc.moveTo(fx,fy-8);sc.lineTo(fx+4,fy-1);
-  sc.stroke();
-  sc.fillStyle="#2b3646";sc.beginPath();sc.arc(fx,fy-23,3.2,0,6.2832);sc.fill();}
   /* readouts */
   sc.font='9px "IBM Plex Mono",monospace';sc.textAlign="left";sc.textBaseline="top";
   sc.fillStyle="#8496ad";
